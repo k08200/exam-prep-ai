@@ -36,11 +36,22 @@ class FileParser:
         """
         Extract text from a PDF using PyMuPDF.
         Falls back to pytesseract OCR for pages whose text is sparse.
+        Falls back to plain-text reading if the file is not a valid PDF.
         """
         def _sync_parse() -> dict:
             import fitz  # PyMuPDF
 
-            doc = fitz.open(file_path)
+            try:
+                doc = fitz.open(file_path)
+            except Exception:
+                # Not a valid PDF — try reading as plain text
+                try:
+                    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                        text = f.read()
+                    return {"text": text.strip(), "page_count": 1}
+                except Exception as txt_exc:
+                    logger.warning("Could not read file as text either: %s", txt_exc)
+                    return {"text": "", "page_count": None}
             page_texts: list[str] = []
 
             for page in doc:
