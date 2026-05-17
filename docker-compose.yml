@@ -16,20 +16,21 @@ services:
       timeout: 5s
       retries: 10
     ports:
-      - "5432:5432"
+      - "5434:5432"
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-examprep}:${POSTGRES_PASSWORD:-examprep_password}@db:5432/${POSTGRES_DB:-examprep_db}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-32chars}
       ALGORITHM: ${ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      USE_MOCK_CLAUDE: ${USE_MOCK_CLAUDE:-true}
       UPLOAD_DIR: /app/uploads
       MAX_FILE_SIZE: ${MAX_FILE_SIZE:-52428800}
       CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-opus-4-7}
@@ -41,19 +42,19 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3003:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8001
     depends_on:
       backend:
         condition: service_healthy

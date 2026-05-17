@@ -118,7 +118,7 @@ export function ExamResults({ result, questions }: ExamResultsProps) {
         <div>
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Concepts Tested</h3>
           <div className="flex flex-wrap gap-1.5">
-            {[...allConcepts].map((concept) => (
+            {Array.from(allConcepts).map((concept) => (
               <span
                 key={concept}
                 className="px-2.5 py-1 bg-violet-50 text-violet-700 text-xs rounded-full border border-violet-200"
