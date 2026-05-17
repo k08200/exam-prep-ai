@@ -51,10 +51,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8001
     ports:
       - "3003:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8001
     depends_on:
       backend:
         condition: service_healthy

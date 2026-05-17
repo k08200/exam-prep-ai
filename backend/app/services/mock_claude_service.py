@@ -139,10 +139,32 @@ def _build_mock_analysis(course_name: str, professor_name: str, materials_text: 
     word_count = len(materials_text.split()) if materials_text else 500
 
     # Extract rough keywords from materials to make it feel real
-    words = [w.strip(".,;:()[]{}\"'").lower() for w in materials_text.split() if len(w) > 5]
+    _STOPWORDS = {
+        "about", "above", "after", "again", "against", "always", "among", "being",
+        "between", "could", "during", "every", "following", "found", "given",
+        "having", "however", "important", "including", "large", "like", "many",
+        "might", "more", "most", "much", "must", "never", "often", "other",
+        "please", "rather", "really", "since", "should", "some", "such",
+        "their", "there", "these", "they", "this", "through", "under", "used",
+        "using", "very", "well", "were", "when", "where", "which", "while",
+        "will", "with", "would", "your",
+    }
+    _FILE_EXTS = {".pdf", ".pptx", ".ppt", ".docx", ".doc", ".txt", ".png", ".jpg"}
+
+    def _is_valid_keyword(token: str) -> bool:
+        if len(token) <= 5:
+            return False
+        if any(token.endswith(ext) for ext in _FILE_EXTS):
+            return False
+        if not token.isalpha():
+            return False
+        return token not in _STOPWORDS
+
+    words = [w.strip(".,;:()[]{}\"'").lower() for w in materials_text.split()]
     word_freq: dict[str, int] = {}
     for w in words:
-        word_freq[w] = word_freq.get(w, 0) + 1
+        if _is_valid_keyword(w):
+            word_freq[w] = word_freq.get(w, 0) + 1
     top_words = sorted(word_freq.items(), key=lambda x: -x[1])[:6]
     keyword_concepts = [w.capitalize() for w, _ in top_words]
 
