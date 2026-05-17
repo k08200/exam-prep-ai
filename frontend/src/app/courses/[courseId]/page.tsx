@@ -38,6 +38,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
 ];
 
 interface GenerateExamOptions {
+  title: string;
   question_count: number;
   mode: 'standard' | 'cram';
 }
@@ -56,6 +57,7 @@ export default function CourseDetailPage() {
 
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
   const [generateOptions, setGenerateOptions] = useState<GenerateExamOptions>({
+    title: '',
     question_count: 10,
     mode: 'standard',
   });
@@ -145,6 +147,10 @@ export default function CourseDetailPage() {
   };
 
   const handleGenerateExam = async () => {
+    if (!generateOptions.title.trim()) {
+      setGenerateError('Please enter an exam title.');
+      return;
+    }
     setGenerateError(null);
     setGenerateText('');
     setGenerateTokens(0);
@@ -558,6 +564,7 @@ export default function CourseDetailPage() {
             setIsGenerateOpen(false);
             setGenerateError(null);
             setGenerateText('');
+            setGenerateOptions((prev) => ({ ...prev, title: '' }));
           }
         }}
         title="Generate Practice Exam"
@@ -572,6 +579,19 @@ export default function CourseDetailPage() {
                 {generateError}
               </div>
             )}
+
+            <div>
+              <label className="label-base">Exam Title</label>
+              <input
+                type="text"
+                className="input-base"
+                placeholder="e.g. Midterm Practice"
+                value={generateOptions.title}
+                onChange={(e) =>
+                  setGenerateOptions((prev) => ({ ...prev, title: e.target.value }))
+                }
+              />
+            </div>
 
             <div>
               <label className="label-base">Number of Questions</label>

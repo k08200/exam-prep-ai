@@ -11,7 +11,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User
-from app.schemas.auth import Token, UserCreate, UserResponse
+from app.schemas.auth import Token, UserCreate, UserResponse, UserUpdate, PasswordChange
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -70,3 +70,43 @@ async def login(
 async def get_me(current_user: User = Depends(get_current_user)) -> UserResponse:
     """Return the currently authenticated user's profile."""
     return UserResponse.model_validate(current_user)
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
+    """Update the current user's profile fields."""
+    if user_update.full_name is not None:
+        current_user.full_name = user_update.full_name
+    await db.commit()
+    await db.refresh(current_user)
+    return UserResponse.model_validate(current_user)
+
+
+@router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    payload: PasswordChange,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Change the current user's password."""
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is incorrect",
+        )
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    await db.commit()
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Permanently delete the current user and all their data."""
+    await db.delete(current_user)
+    await db.commit()

@@ -6,20 +6,37 @@ import { z } from 'zod';
 import { AlertCircle, CheckCircle, User, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader } from '@/components/ui/Card';
+import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
 import { authApi } from '@/lib/api';
 
 const profileSchema = z.object({
-  full_name: z.string().optional(),
-  email: z.string().email('Invalid email').min(1),
+  full_name: z.string().max(255).optional(),
 });
 
+const passwordSchema = z
+  .object({
+    current_password: z.string().min(1, 'Required'),
+    new_password: z.string().min(8, 'At least 8 characters'),
+    confirm_password: z.string().min(1, 'Required'),
+  })
+  .refine((d) => d.new_password === d.confirm_password, {
+    message: 'Passwords do not match',
+    path: ['confirm_password'],
+  });
+
 type ProfileFormData = z.infer<typeof profileSchema>;
+type PasswordFormData = z.infer<typeof passwordSchema>;
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const {
     register,
@@ -29,16 +46,56 @@ export default function SettingsPage() {
     resolver: zodResolver(profileSchema),
     defaultValues: {
       full_name: user?.full_name || '',
-      email: user?.email || '',
     },
   });
 
-  const onProfileSubmit = async (_data: ProfileFormData) => {
-    // Profile update would call the appropriate endpoint
-    // For now, show success feedback
-    setProfileError(null);
-    setProfileSuccess(true);
-    setTimeout(() => setProfileSuccess(false), 3000);
+  const {
+    register: registerPw,
+    handleSubmit: handleSubmitPw,
+    reset: resetPw,
+    formState: { errors: pwErrors, isSubmitting: isPwSubmitting },
+  } = useForm<PasswordFormData>({ resolver: zodResolver(passwordSchema) });
+
+  const onProfileSubmit = async (data: ProfileFormData) => {
+    try {
+      setProfileError(null);
+      await authApi.updateMe({ full_name: data.full_name ?? '' });
+      await refreshUser();
+      setProfileSuccess(true);
+      setTimeout(() => setProfileSuccess(false), 3000);
+    } catch {
+      setProfileError('Failed to update profile. Please try again.');
+    }
+  };
+
+  const onPasswordSubmit = async (data: PasswordFormData) => {
+    try {
+      setPasswordError(null);
+      await authApi.changePassword(data.current_password, data.new_password);
+      resetPw();
+      setPasswordSuccess(true);
+      setTimeout(() => setPasswordSuccess(false), 3000);
+    } catch (err: unknown) {
+      const status =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { status?: number } }).response?.status
+          : null;
+      setPasswordError(
+        status === 401 ? 'Current password is incorrect.' : 'Failed to change password.'
+      );
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await authApi.deleteMe();
+      logout();
+    } catch {
+      setDeleteError('Failed to delete account. Please try again.');
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -74,29 +131,97 @@ export default function SettingsPage() {
               <label className="label-base">Full Name</label>
               <input
                 type="text"
-                className="input-base"
+                className={`input-base ${errors.full_name ? 'border-red-400' : ''}`}
                 placeholder="Your full name"
                 {...register('full_name')}
               />
+              {errors.full_name && (
+                <p className="error-message">
+                  <AlertCircle className="h-3 w-3" />
+                  {errors.full_name.message}
+                </p>
+              )}
             </div>
             <div>
               <label className="label-base">Email Address</label>
               <input
                 type="email"
-                className={`input-base ${errors.email ? 'border-red-400' : ''}`}
-                placeholder="your@email.com"
-                {...register('email')}
+                className="input-base bg-gray-50 text-gray-500 cursor-not-allowed"
+                value={user?.email || ''}
+                disabled
               />
-              {errors.email && (
-                <p className="error-message">
-                  <AlertCircle className="h-3 w-3" />
-                  {errors.email.message}
-                </p>
-              )}
+              <p className="text-xs text-gray-400 mt-1">Email cannot be changed.</p>
             </div>
             <div className="flex justify-end">
               <Button type="submit" size="sm" loading={isSubmitting}>
                 Save Changes
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Password Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-gray-500" />
+            <h2 className="text-sm font-semibold text-gray-900">Change Password</h2>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {passwordSuccess && (
+            <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg mb-4 text-sm text-green-700">
+              <CheckCircle className="h-4 w-4 flex-shrink-0" />
+              Password changed successfully!
+            </div>
+          )}
+          {passwordError && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg mb-4 text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              {passwordError}
+            </div>
+          )}
+          <form onSubmit={handleSubmitPw(onPasswordSubmit)} className="space-y-4">
+            <div>
+              <label className="label-base">Current Password</label>
+              <input
+                type="password"
+                className={`input-base ${pwErrors.current_password ? 'border-red-400' : ''}`}
+                placeholder="••••••••"
+                {...registerPw('current_password')}
+              />
+              {pwErrors.current_password && (
+                <p className="error-message"><AlertCircle className="h-3 w-3" />{pwErrors.current_password.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="label-base">New Password</label>
+              <input
+                type="password"
+                className={`input-base ${pwErrors.new_password ? 'border-red-400' : ''}`}
+                placeholder="••••••••"
+                {...registerPw('new_password')}
+              />
+              {pwErrors.new_password && (
+                <p className="error-message"><AlertCircle className="h-3 w-3" />{pwErrors.new_password.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="label-base">Confirm New Password</label>
+              <input
+                type="password"
+                className={`input-base ${pwErrors.confirm_password ? 'border-red-400' : ''}`}
+                placeholder="••••••••"
+                {...registerPw('confirm_password')}
+              />
+              {pwErrors.confirm_password && (
+                <p className="error-message"><AlertCircle className="h-3 w-3" />{pwErrors.confirm_password.message}</p>
+              )}
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" size="sm" loading={isPwSubmitting}>
+                Change Password
               </Button>
             </div>
           </form>
@@ -156,15 +281,60 @@ export default function SettingsPage() {
             <Button
               variant="danger"
               size="sm"
-              onClick={() =>
-                alert('To delete your account, please contact support.')
-              }
+              onClick={() => setShowDeleteConfirm(true)}
             >
               Delete Account
             </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={showDeleteConfirm}
+        onClose={() => {
+          if (!isDeleting) {
+            setShowDeleteConfirm(false);
+            setDeleteError(null);
+          }
+        }}
+        title="Delete Account"
+        description="This action is permanent and cannot be undone."
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            All your courses, materials, exams, and analytics data will be permanently deleted.
+          </p>
+          {deleteError && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              {deleteError}
+            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setShowDeleteConfirm(false);
+                setDeleteError(null);
+              }}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              loading={isDeleting}
+              onClick={handleDeleteAccount}
+            >
+              Yes, Delete My Account
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

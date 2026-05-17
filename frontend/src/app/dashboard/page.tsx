@@ -13,14 +13,16 @@ import {
   Trash2,
   AlertCircle,
   BarChart3,
+  Trophy,
+  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
-import { coursesApi } from '@/lib/api';
-import { formatDate } from '@/lib/utils';
+import { coursesApi, examsApi } from '@/lib/api';
+import { formatDate, getScoreColor } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
-import type { Course } from '@/types';
+import type { Course, Exam } from '@/types';
 
 const courseSchema = z.object({
   name: z.string().min(1, 'Course name is required').max(100),
@@ -113,6 +115,14 @@ export default function DashboardPage() {
     queryKey: ['courses'],
     queryFn: async () => {
       const res = await coursesApi.list();
+      return res.data;
+    },
+  });
+
+  const { data: recentExams = [] } = useQuery<Exam[]>({
+    queryKey: ['recentExams'],
+    queryFn: async () => {
+      const res = await examsApi.listAll(5);
       return res.data;
     },
   });
@@ -218,6 +228,43 @@ export default function DashboardPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Recent Exams */}
+      {recentExams.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">Recent Practice</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {recentExams.slice(0, 3).map((exam) => {
+              const score = exam.score !== null ? Math.round(exam.score) : null;
+              return (
+                <Link key={exam.id} href={`/exam/${exam.id}`}>
+                  <div className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl hover:shadow-md transition-shadow cursor-pointer">
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${exam.mode === 'cram' ? 'bg-amber-50' : 'bg-indigo-50'}`}>
+                      {exam.mode === 'cram' ? (
+                        <Zap className="h-5 w-5 text-amber-500" />
+                      ) : (
+                        <BookOpen className="h-5 w-5 text-indigo-500" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{exam.title}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{formatDate(exam.created_at)}</p>
+                    </div>
+                    {score !== null && (
+                      <div className={`flex-shrink-0 text-sm font-bold ${getScoreColor(score)}`}>
+                        {score}%
+                      </div>
+                    )}
+                    {score === null && (
+                      <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-medium">Active</span>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
         </div>
       )}
 

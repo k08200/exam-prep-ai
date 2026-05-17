@@ -182,6 +182,22 @@ async def _stream_exam_generation(
     )
 
 
+@router.get("/exams", response_model=list[ExamResponse])
+async def list_all_exams(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 20,
+) -> list[ExamResponse]:
+    """Return the most recent exams across all courses for the current user."""
+    result = await db.execute(
+        select(Exam)
+        .where(Exam.user_id == current_user.id)
+        .order_by(Exam.created_at.desc())
+        .limit(limit)
+    )
+    return [ExamResponse.model_validate(e) for e in result.scalars().all()]
+
+
 @router.post("/courses/{course_id}/exams")
 async def create_exam(
     course_id: uuid.UUID,

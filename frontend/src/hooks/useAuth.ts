@@ -37,5 +37,14 @@ export function useAuth() {
     router.push('/auth/login');
   };
 
-  return { user, loading, login, logout };
+  const refreshUser = async () => {
+    try {
+      const res = await authApi.me();
+      setUser(res.data);
+    } catch {
+      // ignore — token may have expired
+    }
+  };
+
+  return { user, loading, login, logout, refreshUser };
 }

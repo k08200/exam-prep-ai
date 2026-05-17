@@ -30,5 +30,14 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+class UserUpdate(BaseModel):
+    full_name: str | None = Field(default=None, max_length=255)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class TokenData(BaseModel):
     email: str | None = None

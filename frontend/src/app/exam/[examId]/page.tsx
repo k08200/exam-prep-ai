@@ -307,11 +307,11 @@ export default function ExamPage() {
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
           <button
-            onClick={() => router.back()}
+            onClick={() => router.push(exam.course_id ? `/courses/${exam.course_id}` : '/dashboard')}
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">Back</span>
+            <span className="hidden sm:inline">Back to Course</span>
           </button>
 
           <div className="flex-1 text-center">

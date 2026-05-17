@@ -40,6 +40,10 @@ export const authApi = {
     });
   },
   me: () => api.get('/auth/me'),
+  updateMe: (data: { full_name?: string }) => api.patch('/auth/me', data),
+  changePassword: (current_password: string, new_password: string) =>
+    api.patch('/auth/me/password', { current_password, new_password }),
+  deleteMe: () => api.delete('/auth/me'),
 };
 
 // Courses
@@ -81,14 +85,15 @@ export const materialsApi = {
 // Analysis - returns SSE stream URL
 export const analysisApi = {
   getStreamUrl: (courseId: string) =>
-    `${API_URL}/courses/${courseId}/analysis/stream`,
+    `${API_URL}/courses/${courseId}/analysis`,
   get: (courseId: string) => api.get(`/courses/${courseId}/analysis`),
 };
 
 // Exams
 export const examsApi = {
   getStreamUrl: (courseId: string) =>
-    `${API_URL}/courses/${courseId}/exams/stream`,
+    `${API_URL}/courses/${courseId}/exams`,
+  listAll: (limit = 20) => api.get(`/exams?limit=${limit}`),
   list: (courseId: string) => api.get(`/courses/${courseId}/exams`),
   get: (examId: string) => api.get(`/exams/${examId}`),
   submit: (

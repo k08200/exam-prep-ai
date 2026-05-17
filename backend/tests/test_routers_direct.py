@@ -217,3 +217,112 @@ async def test_delete_course_direct_not_found(db_session: AsyncSession, direct_u
     with pytest.raises(HTTPException) as exc_info:
         await delete_course(course_id=uuid.uuid4(), current_user=direct_user, db=db_session)
     assert exc_info.value.status_code == 404
+
+
+# ── auth update/delete ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_update_me_direct(db_session: AsyncSession) -> None:
+    """update_me() updates full_name and returns updated UserResponse."""
+    from app.routers.auth import register, update_me
+    from app.schemas.auth import UserUpdate
+
+    user_resp = await register(UserCreate(email="updateme@example.com", password="password123"), db=db_session)
+    await db_session.flush()
+
+    from sqlalchemy import select
+    from app.models.user import User
+    row = await db_session.execute(select(User).where(User.email == "updateme@example.com"))
+    user = row.scalar_one()
+
+    result = await update_me(UserUpdate(full_name="New Name"), current_user=user, db=db_session)
+    assert result.full_name == "New Name"
+    assert result.email == "updateme@example.com"
+
+
+@pytest.mark.asyncio
+async def test_update_me_direct_no_change(db_session: AsyncSession) -> None:
+    """update_me() with full_name=None leaves the field unchanged."""
+    from app.routers.auth import register, update_me
+    from app.schemas.auth import UserUpdate
+
+    await register(UserCreate(email="noop@example.com", password="password123", full_name="Original"), db=db_session)
+    await db_session.flush()
+
+    from sqlalchemy import select
+    from app.models.user import User
+    row = await db_session.execute(select(User).where(User.email == "noop@example.com"))
+    user = row.scalar_one()
+
+    result = await update_me(UserUpdate(full_name=None), current_user=user, db=db_session)
+    assert result.full_name == "Original"
+
+
+@pytest.mark.asyncio
+async def test_change_password_direct_success(db_session: AsyncSession) -> None:
+    """change_password() succeeds with correct current password."""
+    from app.routers.auth import register, change_password
+    from app.schemas.auth import PasswordChange
+
+    await register(UserCreate(email="chpw@example.com", password="oldpassword"), db=db_session)
+    await db_session.flush()
+
+    from sqlalchemy import select
+    from app.models.user import User
+    row = await db_session.execute(select(User).where(User.email == "chpw@example.com"))
+    user = row.scalar_one()
+
+    # Should not raise
+    await change_password(PasswordChange(current_password="oldpassword", new_password="newpassword123"), current_user=user, db=db_session)
+
+
+@pytest.mark.asyncio
+async def test_change_password_direct_wrong_current(db_session: AsyncSession) -> None:
+    """change_password() raises 401 for incorrect current password."""
+    from app.routers.auth import register, change_password
+    from app.schemas.auth import PasswordChange
+
+    await register(UserCreate(email="chpw2@example.com", password="correctpass"), db=db_session)
+    await db_session.flush()
+
+    from sqlalchemy import select
+    from app.models.user import User
+    row = await db_session.execute(select(User).where(User.email == "chpw2@example.com"))
+    user = row.scalar_one()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await change_password(PasswordChange(current_password="wrongpass", new_password="newpassword123"), current_user=user, db=db_session)
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_delete_me_direct(db_session: AsyncSession) -> None:
+    """delete_me() removes the user from the database."""
+    from app.routers.auth import register, delete_me
+
+    await register(UserCreate(email="deleteme@example.com", password="password123"), db=db_session)
+    await db_session.flush()
+
+    from sqlalchemy import select
+    from app.models.user import User
+    row = await db_session.execute(select(User).where(User.email == "deleteme@example.com"))
+    user = row.scalar_one()
+
+    await delete_me(current_user=user, db=db_session)
+    await db_session.flush()
+
+    row2 = await db_session.execute(select(User).where(User.email == "deleteme@example.com"))
+    assert row2.scalar_one_or_none() is None
+
+
+# ── exams router — list all ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_all_exams_direct_empty(db_session: AsyncSession, direct_user) -> None:
+    """list_all_exams() returns empty list when user has no exams."""
+    from app.routers.exams import list_all_exams
+
+    result = await list_all_exams(current_user=direct_user, db=db_session, limit=20)
+    assert result == []
