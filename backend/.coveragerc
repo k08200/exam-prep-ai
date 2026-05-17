@@ -1,0 +1,19 @@
+[coverage:run]
+omit =
+    # Requires real Anthropic API key — tested via mock service instead
+    app/services/claude_service.py
+    # Database engine setup — infrastructure code, not business logic
+    app/core/database.py
+
+[coverage:report]
+exclude_lines =
+    # Standard pragma
+    pragma: no cover
+    # Abstract methods
+    @abstractmethod
+    # Type-checking imports
+    if TYPE_CHECKING:
+    # Defensive programming branches
+    raise NotImplementedError
+    # Entry points
+    if __name__ == .__main__.:
