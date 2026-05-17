@@ -1,0 +1,323 @@
+'use client';
+import { useState, useCallback, useRef, DragEvent, ChangeEvent } from 'react';
+import { Upload, X, FileText, AlertCircle, CheckCircle } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { formatFileSize } from '@/lib/utils';
+import { materialsApi } from '@/lib/api';
+
+const ACCEPTED_TYPES = [
+  'application/pdf',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/msword',
+  'image/png',
+  'image/jpeg',
+];
+
+const ACCEPTED_EXTENSIONS = ['.pdf', '.ppt', '.pptx', '.docx', '.doc', '.png', '.jpg', '.jpeg'];
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+interface FileWithProgress {
+  file: File;
+  id: string;
+  progress: number;
+  status: 'pending' | 'uploading' | 'done' | 'error';
+  error?: string;
+}
+
+interface FileUploadProps {
+  courseId: string;
+  onSuccess: () => void;
+  onError: (message: string) => void;
+}
+
+function getFileIcon(file: File) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.pdf')) return '📄';
+  if (name.endsWith('.ppt') || name.endsWith('.pptx')) return '📊';
+  if (name.endsWith('.doc') || name.endsWith('.docx')) return '📝';
+  if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return '🖼️';
+  return '📁';
+}
+
+export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<FileWithProgress[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const validateFile = (file: File): string | null => {
+    if (file.size > MAX_FILE_SIZE) {
+      return `File exceeds 50MB limit (${formatFileSize(file.size)})`;
+    }
+    const isValidType = ACCEPTED_TYPES.includes(file.type);
+    const isValidExt = ACCEPTED_EXTENSIONS.some((ext) =>
+      file.name.toLowerCase().endsWith(ext)
+    );
+    if (!isValidType && !isValidExt) {
+      return 'Unsupported file type';
+    }
+    return null;
+  };
+
+  const addFiles = useCallback((newFiles: File[]) => {
+    const withProgress: FileWithProgress[] = newFiles.map((file) => {
+      const error = validateFile(file);
+      return {
+        file,
+        id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
+        progress: 0,
+        status: error ? 'error' : 'pending',
+        error: error ?? undefined,
+      };
+    });
+    setSelectedFiles((prev) => {
+      const existingNames = new Set(prev.map((f) => f.file.name));
+      const unique = withProgress.filter((f) => !existingNames.has(f.file.name));
+      return [...prev, ...unique];
+    });
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const droppedFiles = Array.from(e.dataTransfer.files);
+      addFiles(droppedFiles);
+    },
+    [addFiles]
+  );
+
+  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleInputChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files) {
+        addFiles(Array.from(e.target.files));
+      }
+    },
+    [addFiles]
+  );
+
+  const removeFile = (id: string) => {
+    setSelectedFiles((prev) => prev.filter((f) => f.id !== id));
+  };
+
+  const validFiles = selectedFiles.filter((f) => f.status !== 'error');
+
+  const handleUpload = async () => {
+    if (validFiles.length === 0) return;
+    setIsUploading(true);
+
+    // Mark all valid files as uploading
+    setSelectedFiles((prev) =>
+      prev.map((f) =>
+        f.status === 'pending' ? { ...f, status: 'uploading', progress: 10 } : f
+      )
+    );
+
+    try {
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setSelectedFiles((prev) =>
+          prev.map((f) =>
+            f.status === 'uploading' && f.progress < 80
+              ? { ...f, progress: f.progress + 10 }
+              : f
+          )
+        );
+      }, 200);
+
+      await materialsApi.upload(
+        courseId,
+        validFiles.map((f) => f.file)
+      );
+
+      clearInterval(progressInterval);
+
+      setSelectedFiles((prev) =>
+        prev.map((f) =>
+          f.status === 'uploading' ? { ...f, status: 'done', progress: 100 } : f
+        )
+      );
+
+      setTimeout(() => {
+        setSelectedFiles([]);
+        onSuccess();
+      }, 800);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Upload failed. Please try again.';
+      setSelectedFiles((prev) =>
+        prev.map((f) =>
+          f.status === 'uploading'
+            ? { ...f, status: 'error', error: 'Upload failed', progress: 0 }
+            : f
+        )
+      );
+      onError(message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Drop Zone */}
+      <div
+        className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
+          isDragging
+            ? 'border-blue-500 bg-blue-50'
+            : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
+        }`}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onClick={() => inputRef.current?.click()}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept={ACCEPTED_EXTENSIONS.join(',')}
+          className="hidden"
+          onChange={handleInputChange}
+        />
+        <div className="flex flex-col items-center gap-3">
+          <div
+            className={`p-3 rounded-full ${
+              isDragging ? 'bg-blue-100' : 'bg-gray-100'
+            } transition-colors`}
+          >
+            <Upload
+              className={`h-6 w-6 ${isDragging ? 'text-blue-600' : 'text-gray-400'}`}
+            />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-700">
+              {isDragging ? 'Drop files here' : 'Drag & drop files or click to browse'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              PDF, PPT, PPTX, DOCX, DOC, PNG, JPG up to 50MB each
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {['PDF', 'PPT', 'PPTX', 'DOCX', 'DOC', 'PNG', 'JPG'].map((ext) => (
+              <span
+                key={ext}
+                className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded font-mono"
+              >
+                .{ext.toLowerCase()}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Selected Files */}
+      {selectedFiles.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-gray-700">
+            {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
+          </p>
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {selectedFiles.map((fileItem) => (
+              <div
+                key={fileItem.id}
+                className={`flex items-center gap-3 p-3 rounded-lg border ${
+                  fileItem.status === 'error'
+                    ? 'border-red-200 bg-red-50'
+                    : fileItem.status === 'done'
+                    ? 'border-green-200 bg-green-50'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <span className="text-xl flex-shrink-0">{getFileIcon(fileItem.file)}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">
+                    {fileItem.file.name}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-gray-500">
+                      {formatFileSize(fileItem.file.size)}
+                    </p>
+                    {fileItem.error && (
+                      <p className="text-xs text-red-600">{fileItem.error}</p>
+                    )}
+                  </div>
+                  {/* Progress bar */}
+                  {fileItem.status === 'uploading' && (
+                    <div className="mt-1.5 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                        style={{ width: `${fileItem.progress}%` }}
+                      />
+                    </div>
+                  )}
+                  {fileItem.status === 'done' && (
+                    <div className="mt-1.5 h-1.5 bg-green-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500 rounded-full w-full" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-shrink-0">
+                  {fileItem.status === 'done' ? (
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                  ) : fileItem.status === 'error' ? (
+                    <AlertCircle className="h-4 w-4 text-red-500" />
+                  ) : fileItem.status === 'uploading' ? (
+                    <div className="h-4 w-4">
+                      <svg className="animate-spin h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFile(fileItem.id);
+                      }}
+                      className="p-0.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Upload Button */}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setSelectedFiles([])}
+              disabled={isUploading}
+            >
+              Clear All
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleUpload}
+              loading={isUploading}
+              disabled={validFiles.length === 0 || isUploading}
+            >
+              <FileText className="h-4 w-4" />
+              Upload {validFiles.length > 0 ? `${validFiles.length} File${validFiles.length > 1 ? 's' : ''}` : ''}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
