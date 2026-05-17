@@ -34,10 +34,10 @@ from app.schemas.exam import (
     QuestionResult,
 )
 from app.services.analytics_service import AnalyticsService
-from app.services.claude_service import ClaudeService
+from app.services import get_claude_service
 
 router = APIRouter(tags=["exams"])
-claude_service = ClaudeService()
+claude_service = get_claude_service()
 analytics_service = AnalyticsService()
 
 

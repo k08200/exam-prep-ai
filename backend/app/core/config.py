@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     }
     UPLOAD_DIR: str = "./uploads"
 
+    # Set to true to use mock responses (no API key required)
+    USE_MOCK_CLAUDE: bool = False
+
     # Claude model config
     CLAUDE_MODEL: str = "claude-opus-4-7"
     # Extended thinking budgets (tokens).

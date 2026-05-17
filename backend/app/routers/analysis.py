@@ -14,10 +14,10 @@ from app.models.course import Course
 from app.models.material import Material, PROCESSING_STATUS_COMPLETED
 from app.models.user import User
 from app.schemas.analysis import AnalysisResponse, ConceptItem, ProfessorTerm, QuestionTypeDistribution
-from app.services.claude_service import ClaudeService
+from app.services import get_claude_service
 
 router = APIRouter(tags=["analysis"])
-claude_service = ClaudeService()
+claude_service = get_claude_service()
 
 
 async def _assert_course_ownership(
