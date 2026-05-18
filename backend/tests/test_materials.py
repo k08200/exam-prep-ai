@@ -265,7 +265,7 @@ async def test_parse_failure_sets_processing_error(
         "app.core.database.AsyncSessionLocal",
         return_value=TestSessionContext(),
     ):
-        await _parse_and_update(material_id, "/tmp/missing.pdf", "pdf")
+        await _parse_and_update(uuid.UUID(material_id), "/tmp/missing.pdf", "pdf")
 
     result = await db_session.execute(select(Material).where(Material.id == uuid.UUID(material_id)))
     material = result.scalar_one()
