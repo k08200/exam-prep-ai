@@ -249,6 +249,7 @@ async def test_parse_failure_sets_processing_error(
             headers=auth_headers,
         )
     material_id = upload_resp.json()["materials"][0]["id"]
+    await db_session.commit()
 
     class TestSessionContext:
         async def __aenter__(self):
