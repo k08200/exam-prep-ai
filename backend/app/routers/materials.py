@@ -71,12 +71,14 @@ async def _parse_and_update(material_id: uuid.UUID, file_path: str, file_type: s
                 return
 
             material.processing_status = PROCESSING_STATUS_PROCESSING
+            material.processing_error = None
             await session.flush()
 
             parsed = await file_parser.parse_file(file_path, file_type)
             material.extracted_text = parsed["text"]
             material.page_count = parsed.get("page_count")
             material.processing_status = PROCESSING_STATUS_COMPLETED
+            material.processing_error = None
 
             await session.commit()
         except Exception as exc:
@@ -89,6 +91,7 @@ async def _parse_and_update(material_id: uuid.UUID, file_path: str, file_type: s
                 material = result.scalar_one_or_none()
                 if material:
                     material.processing_status = PROCESSING_STATUS_FAILED
+                    material.processing_error = str(exc)
                     await session.commit()
             except Exception:
                 pass

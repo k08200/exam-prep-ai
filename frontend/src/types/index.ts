@@ -26,6 +26,7 @@ export interface Material {
   file_type: string;
   file_size: number;
   processing_status: 'pending' | 'processing' | 'completed' | 'failed';
+  processing_error: string | null;
   page_count: number | null;
   created_at: string;
 }

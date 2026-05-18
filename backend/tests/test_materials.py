@@ -5,12 +5,16 @@ File I/O and Claude are mocked where appropriate.
 import io
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.material import Material, PROCESSING_STATUS_FAILED
 from app.services.file_parser import FileParser
 
 
@@ -85,6 +89,7 @@ async def test_upload_pdf_success(
     assert mat["original_filename"] == "lecture.pdf"
     assert mat["file_type"] == "pdf"
     assert mat["processing_status"] == "pending"
+    assert mat["processing_error"] is None
     assert data["total_size"] == len(pdf_bytes)
 
 
@@ -224,6 +229,47 @@ async def test_delete_material(
     list_resp = await client.get(f"/courses/{course_id}/materials", headers=auth_headers)
     ids = [m["id"] for m in list_resp.json()]
     assert material_id not in ids
+
+
+@pytest.mark.asyncio
+async def test_parse_failure_sets_processing_error(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Background parser failures are persisted for the UI to display."""
+    from app.routers.materials import _parse_and_update
+
+    course_id = test_course["id"]
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("bad.pdf", b"not a real file", "application/pdf")},
+            headers=auth_headers,
+        )
+    material_id = upload_resp.json()["materials"][0]["id"]
+
+    class TestSessionContext:
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    with patch(
+        "app.routers.materials.file_parser.parse_file",
+        new=AsyncMock(side_effect=RuntimeError("parser exploded")),
+    ), patch(
+        "app.core.database.AsyncSessionLocal",
+        return_value=TestSessionContext(),
+    ):
+        await _parse_and_update(material_id, "/tmp/missing.pdf", "pdf")
+
+    result = await db_session.execute(select(Material).where(Material.id == uuid.UUID(material_id)))
+    material = result.scalar_one()
+    assert material.processing_status == PROCESSING_STATUS_FAILED
+    assert material.processing_error == "parser exploded"
 
 
 # ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ class MaterialResponse(BaseModel):
     file_type: str
     file_size: int
     processing_status: str
+    processing_error: str | None = None
     page_count: int | None
     created_at: datetime
 

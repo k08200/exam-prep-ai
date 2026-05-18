@@ -6,6 +6,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -289,6 +290,56 @@ async def get_exam(
         total_tokens_used=exam.total_tokens_used,
         created_at=exam.created_at,
         questions=[_question_to_schema(q) for q in questions],
+    )
+
+
+@router.get("/exams/{exam_id}/result", response_model=ExamResult)
+async def get_exam_result(
+    exam_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ExamResult:
+    """Return persisted grading results for a completed exam."""
+    result = await db.execute(
+        select(Exam)
+        .where(Exam.id == exam_id)
+        .options(selectinload(Exam.student_responses).selectinload(StudentResponse.question))
+    )
+    exam = result.scalar_one_or_none()
+    if exam is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exam not found")
+    if exam.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if exam.status != EXAM_STATUS_COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Exam has not been submitted yet",
+        )
+
+    responses = sorted(
+        exam.student_responses,
+        key=lambda response: response.question.question_number,
+    )
+
+    return ExamResult(
+        exam_id=exam.id,
+        score=exam.score or 0.0,
+        total_questions=len(responses),
+        correct_count=sum(1 for response in responses if response.is_correct),
+        results=[
+            QuestionResult(
+                question_id=response.question_id,
+                question_number=response.question.question_number,
+                is_correct=bool(response.is_correct),
+                score=response.score or 0.0,
+                student_answer=response.student_answer,
+                correct_answer=response.question.correct_answer,
+                ai_feedback=response.ai_feedback or "",
+                concepts=response.question.concepts or [],
+            )
+            for response in responses
+        ],
+        total_tokens_used=exam.total_tokens_used,
     )
 
 

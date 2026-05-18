@@ -170,12 +170,19 @@ export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
                     {formatFileSize(material.file_size)}
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${statusCfg.className}`}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass}`} />
-                      {statusCfg.label}
-                    </span>
+                    <div className="space-y-1">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${statusCfg.className}`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass}`} />
+                        {statusCfg.label}
+                      </span>
+                      {material.processing_status === 'failed' && material.processing_error && (
+                        <p className="text-xs text-red-600 max-w-[220px] truncate" title={material.processing_error}>
+                          {material.processing_error}
+                        </p>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-gray-500 hidden md:table-cell">
                     {material.page_count ?? '—'}

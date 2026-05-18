@@ -52,6 +52,20 @@ export default function ExamPage() {
     enabled: !!user,
   });
 
+  const {
+    data: persistedResult,
+    isLoading: resultLoading,
+    error: resultError,
+  } = useQuery<ExamResult>({
+    queryKey: ['examResult', examId],
+    queryFn: async () => {
+      const res = await examsApi.result(examId);
+      return res.data;
+    },
+    enabled: !!user && exam?.status === 'completed',
+    retry: false,
+  });
+
   const questions = exam?.questions ?? [];
 
   const answeredCount = useMemo(() => {
@@ -205,6 +219,47 @@ export default function ExamPage() {
 
   // If exam is already completed
   if (exam.status === 'completed') {
+    if (resultLoading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-10 w-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-gray-500">Loading results...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (persistedResult) {
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="flex items-center justify-between mb-6">
+              <button
+                onClick={() =>
+                  router.push(exam.course_id ? `/courses/${exam.course_id}` : '/dashboard')
+                }
+                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to Course
+              </button>
+              <div className="flex items-center gap-2">
+                <Trophy className="h-5 w-5 text-yellow-500" />
+                <span className="font-semibold text-gray-900">Exam Results</span>
+              </div>
+            </div>
+
+            <Card>
+              <CardContent>
+                <ExamResults result={persistedResult} questions={questions} />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6">
         <CheckCircle className="h-12 w-12 text-green-500" />
@@ -216,6 +271,11 @@ export default function ExamPage() {
           {exam.score !== null && (
             <p className="text-3xl font-black text-blue-600 mt-3">
               {Math.round(exam.score)}%
+            </p>
+          )}
+          {resultError && (
+            <p className="text-sm text-red-600 mt-3">
+              Could not load detailed feedback. Please try again later.
             </p>
           )}
         </div>

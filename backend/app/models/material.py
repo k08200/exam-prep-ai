@@ -32,6 +32,7 @@ class Material(Base):
     file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    processing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     processing_status: Mapped[str] = mapped_column(
         String(20),
         default=PROCESSING_STATUS_PENDING,

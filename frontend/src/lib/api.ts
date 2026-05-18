@@ -96,6 +96,7 @@ export const examsApi = {
   listAll: (limit = 20) => api.get(`/exams?limit=${limit}`),
   list: (courseId: string) => api.get(`/courses/${courseId}/exams`),
   get: (examId: string) => api.get(`/exams/${examId}`),
+  result: (examId: string) => api.get(`/exams/${examId}/result`),
   submit: (
     examId: string,
     answers: Array<{ question_id: string; student_answer: string }>

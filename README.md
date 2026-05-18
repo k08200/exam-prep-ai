@@ -27,13 +27,23 @@ cp .env.example .env
 
 ### Run
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 App available at:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+- Frontend: http://localhost:3003
+- Backend API: http://localhost:8001
+- API Docs: http://localhost:8001/docs
+
+### Development With Hot Reload
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+The dev override bind-mounts `backend/` and `frontend/` into the containers:
+- Backend reloads through `uvicorn --reload`
+- Frontend runs `next dev`
+- Uploaded files still persist in the shared `uploads_data` volume
 
 ## Architecture
 
@@ -46,6 +56,7 @@ exam-prep-ai/
 │   │   ├── schemas/  # Pydantic schemas
 │   │   ├── routers/  # API route handlers
 │   │   └── services/ # Business logic (Claude API, file parsing)
+│   ├── migrations/   # Alembic database migrations
 │   └── tests/        # pytest test suite
 ├── frontend/         # Next.js React frontend
 │   └── src/
@@ -83,6 +94,9 @@ Note: The `thinking: {type: "adaptive"}` specification uses Claude's extended th
 - `POST /auth/register` - Create account
 - `POST /auth/login` - Login (returns JWT)
 - `GET /auth/me` - Get current user
+- `PATCH /auth/me` - Update profile
+- `PATCH /auth/me/password` - Change password
+- `DELETE /auth/me` - Delete account
 
 ### Courses
 - `GET /courses` - List your courses
@@ -92,6 +106,7 @@ Note: The `thinking: {type: "adaptive"}` specification uses Claude's extended th
 ### Materials
 - `POST /courses/{id}/materials` - Upload files
 - `GET /courses/{id}/materials` - List files
+- `DELETE /courses/{id}/materials/{material_id}` - Delete uploaded file
 
 ### Analysis (SSE Streaming)
 - `POST /courses/{id}/analysis` - Start professor analysis (streaming)
@@ -99,8 +114,11 @@ Note: The `thinking: {type: "adaptive"}` specification uses Claude's extended th
 
 ### Exams (SSE Streaming)
 - `POST /courses/{id}/exams` - Generate exam (streaming)
+- `GET /courses/{id}/exams` - List course exams
+- `GET /exams` - List recent exams across courses
 - `GET /exams/{id}` - Get exam with questions
 - `POST /exams/{id}/submit` - Submit answers, get results
+- `GET /exams/{id}/result` - Re-open saved grading results
 - `GET /courses/{id}/heatmap` - Get weakness heatmap
 
 ## Development
@@ -118,6 +136,15 @@ uvicorn app.main:app --reload
 cd backend
 pytest --cov=app --cov-report=term-missing
 ```
+
+### Database Migrations
+```bash
+cd backend
+alembic upgrade head
+alembic revision --autogenerate -m "describe change"
+```
+
+`DATABASE_URL` is read from the same environment settings as the app.
 
 ### Frontend
 ```bash

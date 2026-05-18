@@ -308,6 +308,57 @@ async def test_submit_exam_calculates_score(
 
 
 @pytest.mark.asyncio
+async def test_get_exam_result_after_submit(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """GET /exams/{id}/result returns persisted grading details for completed exams."""
+    course_id = test_course["id"]
+    exam_id, q_ids = await _create_exam_with_questions(
+        client, auth_headers, course_id, db_session
+    )
+
+    with patch(
+        "app.routers.exams.claude_service.grade_response",
+        new=AsyncMock(return_value=await _mock_grade_response(correct=True)),
+    ):
+        submit_resp = await client.post(
+            f"/exams/{exam_id}/submit",
+            json={"answers": [{"question_id": qid, "student_answer": "A"} for qid in q_ids]},
+            headers=auth_headers,
+        )
+    assert submit_resp.status_code == 200
+
+    result_resp = await client.get(f"/exams/{exam_id}/result", headers=auth_headers)
+    assert result_resp.status_code == 200
+    data = result_resp.json()
+    assert data["exam_id"] == exam_id
+    assert data["score"] == 100.0
+    assert data["total_questions"] == 2
+    assert len(data["results"]) == 2
+    assert all(r["correct_answer"] for r in data["results"])
+
+
+@pytest.mark.asyncio
+async def test_get_exam_result_before_submit_returns_409(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """GET /exams/{id}/result is only available after submission."""
+    course_id = test_course["id"]
+    exam_id, _ = await _create_exam_with_questions(
+        client, auth_headers, course_id, db_session
+    )
+
+    resp = await client.get(f"/exams/{exam_id}/result", headers=auth_headers)
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_submit_correct_answer(
     client: AsyncClient,
     auth_headers: dict,
