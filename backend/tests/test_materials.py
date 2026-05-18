@@ -6,6 +6,7 @@ import io
 import os
 import tempfile
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -14,7 +15,12 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.material import Material, PROCESSING_STATUS_FAILED
+from app.models.material import (
+    Material,
+    PROCESSING_STATUS_FAILED,
+    PROCESSING_STATUS_PENDING,
+    PROCESSING_STATUS_PROCESSING,
+)
 from app.services.file_parser import FileParser
 
 
@@ -271,6 +277,79 @@ async def test_parse_failure_sets_processing_error(
     material = result.scalar_one()
     assert material.processing_status == PROCESSING_STATUS_FAILED
     assert material.processing_error == "parser exploded"
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_material_resets_status(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Retrying a failed material clears its error and schedules parsing again."""
+    course_id = test_course["id"]
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("retry.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+            headers=auth_headers,
+        )
+    material_id = upload_resp.json()["materials"][0]["id"]
+
+    result = await db_session.execute(select(Material).where(Material.id == uuid.UUID(material_id)))
+    material = result.scalar_one()
+    material.processing_status = PROCESSING_STATUS_FAILED
+    material.processing_error = "previous failure"
+    await db_session.commit()
+
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()) as parser_mock:
+        retry_resp = await client.post(
+            f"/courses/{course_id}/materials/{material_id}/retry",
+            headers=auth_headers,
+        )
+
+    assert retry_resp.status_code == 200
+    data = retry_resp.json()
+    assert data["processing_status"] == PROCESSING_STATUS_PENDING
+    assert data["processing_error"] is None
+    assert parser_mock.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_mark_stale_processing_materials_sets_failure(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Abandoned processing materials are marked failed for user-visible retry."""
+    from app.routers.materials import (
+        STALE_PROCESSING_ERROR,
+        mark_stale_processing_materials,
+    )
+
+    course_id = test_course["id"]
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("stale.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+            headers=auth_headers,
+        )
+    material_id = upload_resp.json()["materials"][0]["id"]
+
+    result = await db_session.execute(select(Material).where(Material.id == uuid.UUID(material_id)))
+    material = result.scalar_one()
+    material.processing_status = PROCESSING_STATUS_PROCESSING
+    material.created_at = datetime.now(timezone.utc) - timedelta(hours=2)
+    await db_session.commit()
+
+    marked = await mark_stale_processing_materials(db_session)
+
+    result = await db_session.execute(select(Material).where(Material.id == uuid.UUID(material_id)))
+    material = result.scalar_one()
+    assert marked == 1
+    assert material.processing_status == PROCESSING_STATUS_FAILED
+    assert material.processing_error == STALE_PROCESSING_ERROR
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
-import { authApi } from '@/lib/api';
+import { authApi, extractErrorMessage } from '@/lib/api';
 
 const profileSchema = z.object({
   full_name: z.string().max(255).optional(),
@@ -68,8 +68,8 @@ export default function SettingsPage() {
       await refreshUser();
       setProfileSuccess(true);
       setTimeout(() => setProfileSuccess(false), 3000);
-    } catch {
-      setProfileError('Failed to update profile. Please try again.');
+    } catch (err: unknown) {
+      setProfileError(extractErrorMessage(err, 'Failed to update profile. Please try again.'));
     }
   };
 
@@ -81,13 +81,7 @@ export default function SettingsPage() {
       setPasswordSuccess(true);
       setTimeout(() => setPasswordSuccess(false), 3000);
     } catch (err: unknown) {
-      const status =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { status?: number } }).response?.status
-          : null;
-      setPasswordError(
-        status === 401 ? 'Current password is incorrect.' : 'Failed to change password.'
-      );
+      setPasswordError(extractErrorMessage(err, 'Failed to change password.'));
     }
   };
 
@@ -97,8 +91,8 @@ export default function SettingsPage() {
     try {
       await authApi.deleteMe();
       logout();
-    } catch {
-      setDeleteError('Failed to delete account. Please try again.');
+    } catch (err: unknown) {
+      setDeleteError(extractErrorMessage(err, 'Failed to delete account. Please try again.'));
       setIsDeleting(false);
     }
   };

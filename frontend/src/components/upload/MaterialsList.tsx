@@ -1,8 +1,8 @@
 'use client';
 import { useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Trash2, FileText, Image, Presentation, FileType, Upload, AlertCircle } from 'lucide-react';
-import { materialsApi } from '@/lib/api';
+import { Trash2, FileText, Image, Presentation, FileType, Upload, AlertCircle, RefreshCw } from 'lucide-react';
+import { extractErrorMessage, materialsApi } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { formatFileSize, formatDate } from '@/lib/utils';
@@ -60,6 +60,8 @@ export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
   const queryClient = useQueryClient();
   const [materialToDelete, setMaterialToDelete] = useState<Material | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const { data: materials = [], isLoading } = useQuery<Material[]>({
@@ -89,16 +91,28 @@ export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
         queryClient.invalidateQueries({ queryKey: ['courses'] });
         setMaterialToDelete(null);
       } catch (err: unknown) {
-        const detail =
-          err && typeof err === 'object' && 'response' in err
-            ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-            : null;
-        setDeleteError(detail || 'Failed to delete material. Please try again.');
+        setDeleteError(extractErrorMessage(err, 'Failed to delete material. Please try again.'));
       } finally {
         setIsDeleting(false);
       }
     },
     [courseId, materialToDelete, queryClient]
+  );
+
+  const handleRetry = useCallback(
+    async (material: Material) => {
+      setRetryingId(material.id);
+      setRetryError(null);
+      try {
+        await materialsApi.retry(courseId, material.id);
+        queryClient.invalidateQueries({ queryKey: ['materials', courseId] });
+      } catch (err: unknown) {
+        setRetryError(extractErrorMessage(err, 'Failed to retry material processing.'));
+      } finally {
+        setRetryingId(null);
+      }
+    },
+    [courseId, queryClient]
   );
 
   if (isLoading) {
@@ -133,6 +147,12 @@ export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
   return (
     <>
       <div className="overflow-hidden rounded-xl border border-gray-200">
+        {retryError && (
+          <div className="flex items-start gap-2 p-3 bg-red-50 border-b border-red-200 text-sm text-red-700">
+            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            {retryError}
+          </div>
+        )}
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
@@ -191,16 +211,30 @@ export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
                     {formatDate(material.created_at)}
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      onClick={() => {
-                        setMaterialToDelete(material);
-                        setDeleteError(null);
-                      }}
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                      aria-label="Delete material"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex justify-end gap-1">
+                      {material.processing_status === 'failed' && (
+                        <button
+                          onClick={() => handleRetry(material)}
+                          disabled={retryingId === material.id}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                          aria-label="Retry material processing"
+                          title="Retry processing"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${retryingId === material.id ? 'animate-spin' : ''}`} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setMaterialToDelete(material);
+                          setDeleteError(null);
+                        }}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        aria-label="Delete material"
+                        title="Delete material"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );

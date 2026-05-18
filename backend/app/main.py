@@ -17,8 +17,10 @@ async def lifespan(app: FastAPI):
     upload_path = Path(settings.UPLOAD_DIR)
     upload_path.mkdir(parents=True, exist_ok=True)
 
-    # Initialise database tables
-    await init_db()
+    if settings.AUTO_CREATE_TABLES:
+        await init_db()
+
+    await materials.recover_stale_processing_materials()
 
     yield
 
@@ -61,7 +63,12 @@ app.include_router(exams.router)
 @app.get("/health", tags=["meta"])
 async def health_check() -> dict:
     """Simple liveness probe."""
-    return {"status": "ok", "version": "1.0.0"}
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+        "ai_mode": "mock" if settings.USE_MOCK_CLAUDE else "claude",
+        "claude_configured": bool(settings.ANTHROPIC_API_KEY),
+    }
 
 
 @app.get("/", tags=["meta"])

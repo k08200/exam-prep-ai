@@ -43,6 +43,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 The dev override bind-mounts `backend/` and `frontend/` into the containers:
 - Backend reloads through `uvicorn --reload`
 - Frontend runs `next dev`
+- Backend runs `alembic upgrade head` before starting unless `RUN_MIGRATIONS=false`
 - Uploaded files still persist in the shared `uploads_data` volume
 
 ## Architecture
@@ -106,6 +107,7 @@ Note: The `thinking: {type: "adaptive"}` specification uses Claude's extended th
 ### Materials
 - `POST /courses/{id}/materials` - Upload files
 - `GET /courses/{id}/materials` - List files
+- `POST /courses/{id}/materials/{material_id}/retry` - Retry failed parsing
 - `DELETE /courses/{id}/materials/{material_id}` - Delete uploaded file
 
 ### Analysis (SSE Streaming)
@@ -144,7 +146,9 @@ alembic upgrade head
 alembic revision --autogenerate -m "describe change"
 ```
 
-`DATABASE_URL` is read from the same environment settings as the app.
+`DATABASE_URL` is read from the same environment settings as the app. Docker startup runs `alembic upgrade head` automatically by default. Set `RUN_MIGRATIONS=false` only when another release step already handles migrations.
+
+For legacy local Docker volumes that were originally created with SQLAlchemy `create_all`, the initial migration is intentionally tolerant: it stamps the existing schema path and adds the `materials.processing_error` column if it is missing.
 
 ### Frontend
 ```bash
@@ -160,6 +164,10 @@ npm run dev
 | ANTHROPIC_API_KEY | Your Anthropic API key | Yes |
 | DATABASE_URL | PostgreSQL connection string | Yes |
 | SECRET_KEY | JWT secret (32+ chars) | Yes |
+| USE_MOCK_CLAUDE | Use deterministic mock AI responses | No (default in Docker: true) |
+| RUN_MIGRATIONS | Run Alembic before backend startup | No (default: true) |
+| AUTO_CREATE_TABLES | Fallback SQLAlchemy table creation | No (default in Docker: false) |
+| MATERIAL_PROCESSING_STALE_MINUTES | Mark abandoned material parsing jobs failed after this many minutes | No (default: 30) |
 | CLAUDE_MODEL | Claude model ID | No (default: claude-opus-4-7) |
 | THINKING_BUDGET_ANALYSIS | Thinking tokens for analysis | No (default: 30000) |
 | THINKING_BUDGET_GENERATION | Thinking tokens for generation | No (default: 10000) |

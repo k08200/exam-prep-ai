@@ -23,7 +23,7 @@ import { AnalysisReport } from '@/components/analytics/AnalysisReport';
 import { ConceptHeatmap } from '@/components/analytics/ConceptHeatmap';
 import { ExamCard } from '@/components/exam/ExamCard';
 import { Modal } from '@/components/ui/Modal';
-import { coursesApi, analysisApi, examsApi } from '@/lib/api';
+import { coursesApi, analysisApi, examsApi, extractErrorMessage } from '@/lib/api';
 import { useSSE } from '@/hooks/useSSE';
 import type { Course, Analysis, Exam, ConceptHeatmapItem } from '@/types';
 import Cookies from 'js-cookie';
@@ -170,7 +170,7 @@ export default function CourseDetailPage() {
       });
 
       if (!response.ok) {
-        let detail = `HTTP error! status: ${response.status}`;
+        let detail = `Request failed with status ${response.status}.`;
         try {
           const payload = await response.json();
           detail = payload.detail || detail;
@@ -232,8 +232,7 @@ export default function CourseDetailPage() {
         }
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to generate exam';
-      setGenerateError(msg);
+      setGenerateError(extractErrorMessage(err, 'Failed to generate exam.'));
     } finally {
       setIsGenerating(false);
     }

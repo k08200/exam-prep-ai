@@ -16,7 +16,7 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { QuestionCard } from '@/components/exam/QuestionCard';
 import { ExamResults } from '@/components/exam/ExamResults';
-import { examsApi } from '@/lib/api';
+import { examsApi, extractErrorMessage } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import type { Exam, ExamResult } from '@/types';
 
@@ -102,12 +102,7 @@ export default function ExamPage() {
         queryClient.invalidateQueries({ queryKey: ['recentExams'] });
       }
     } catch (err: unknown) {
-      const detail =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-          : null;
-      const msg = err instanceof Error ? err.message : 'Submission failed. Please try again.';
-      setSubmitError(detail || msg);
+      setSubmitError(extractErrorMessage(err, 'Submission failed. Please try again.'));
     } finally {
       setIsSubmitting(false);
       setIsGrading(false);

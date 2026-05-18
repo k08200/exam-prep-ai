@@ -27,9 +27,12 @@ class Settings(BaseSettings):
         ".jpeg",
     }
     UPLOAD_DIR: str = "./uploads"
+    MATERIAL_PROCESSING_STALE_MINUTES: int = 30
 
     # Set to true to use mock responses (no API key required)
     USE_MOCK_CLAUDE: bool = False
+    AUTO_CREATE_TABLES: bool = True
+    RUN_MIGRATIONS: bool = True
 
     # Claude model config
     CLAUDE_MODEL: str = "claude-opus-4-7"

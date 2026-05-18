@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Brain, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { authApi } from '@/lib/api';
+import { authApi, extractErrorMessage } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 
 const registerSchema = z
@@ -62,21 +62,7 @@ export default function RegisterPage() {
       // Auto-login after registration
       await login(data.email, data.password);
     } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { data?: { detail?: string }; status?: number } };
-        if (axiosErr.response?.status === 400) {
-          setServerError(
-            axiosErr.response?.data?.detail ||
-              'An account with this email may already exist.'
-          );
-        } else {
-          setServerError(
-            axiosErr.response?.data?.detail || 'Registration failed. Please try again.'
-          );
-        }
-      } else {
-        setServerError('Unable to connect. Please check your connection.');
-      }
+      setServerError(extractErrorMessage(err, 'Registration failed. Please try again.'));
     }
   };
 

@@ -1,5 +1,6 @@
 import os
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import aiofiles
@@ -23,6 +24,7 @@ from app.models.material import (
     Material,
     PROCESSING_STATUS_COMPLETED,
     PROCESSING_STATUS_FAILED,
+    PROCESSING_STATUS_PENDING,
     PROCESSING_STATUS_PROCESSING,
 )
 from app.models.user import User
@@ -31,6 +33,7 @@ from app.services.file_parser import FileParser
 
 router = APIRouter(tags=["materials"])
 file_parser = FileParser()
+STALE_PROCESSING_ERROR = "Processing did not finish. Please retry this material."
 
 # Map file extensions to internal file_type labels
 EXTENSION_TO_TYPE: dict[str, str] = {
@@ -97,6 +100,36 @@ async def _parse_and_update(material_id: uuid.UUID, file_path: str, file_type: s
                 pass
 
 
+async def mark_stale_processing_materials(db: AsyncSession) -> int:
+    """Mark abandoned pending/processing materials as failed so users can retry."""
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        minutes=settings.MATERIAL_PROCESSING_STALE_MINUTES
+    )
+    result = await db.execute(
+        select(Material).where(
+            Material.processing_status.in_(
+                [PROCESSING_STATUS_PENDING, PROCESSING_STATUS_PROCESSING]
+            ),
+            Material.created_at < cutoff,
+        )
+    )
+    materials = result.scalars().all()
+    for material in materials:
+        material.processing_status = PROCESSING_STATUS_FAILED
+        material.processing_error = STALE_PROCESSING_ERROR
+    if materials:
+        await db.commit()
+    return len(materials)
+
+
+async def recover_stale_processing_materials() -> int:
+    """Startup recovery hook for background tasks lost during server restarts."""
+    from app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        return await mark_stale_processing_materials(session)
+
+
 @router.post(
     "/courses/{course_id}/materials",
     response_model=MaterialUploadResponse,
@@ -116,6 +149,7 @@ async def upload_materials(
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     created_materials: list[Material] = []
+    parse_tasks: list[tuple[uuid.UUID, str, str]] = []
     total_size = 0
 
     for upload_file in files:
@@ -158,12 +192,11 @@ async def upload_materials(
         await db.flush()
         await db.refresh(material)
         created_materials.append(material)
+        parse_tasks.append((material.id, str(file_path), file_type))
         total_size += file_size
 
-        # Schedule background parsing after committing
-        background_tasks.add_task(
-            _parse_and_update, material.id, str(file_path), file_type
-        )
+    for material_id, file_path, file_type in parse_tasks:
+        background_tasks.add_task(_parse_and_update, material_id, file_path, file_type)
 
     responses = [MaterialResponse.model_validate(m) for m in created_materials]
     return MaterialUploadResponse(materials=responses, total_size=total_size)
@@ -184,6 +217,63 @@ async def list_materials(
     )
     materials = result.scalars().all()
     return [MaterialResponse.model_validate(m) for m in materials]
+
+
+@router.post(
+    "/courses/{course_id}/materials/{material_id}/retry",
+    response_model=MaterialResponse,
+)
+async def retry_material_processing(
+    course_id: uuid.UUID,
+    material_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MaterialResponse:
+    """Retry parsing for a failed material."""
+    await _assert_course_ownership(course_id, current_user.id, db)
+
+    result = await db.execute(
+        select(Material).where(
+            Material.id == material_id,
+            Material.course_id == course_id,
+        )
+    )
+    material = result.scalar_one_or_none()
+    if material is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
+    if material.processing_status in [PROCESSING_STATUS_PENDING, PROCESSING_STATUS_PROCESSING]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This material is already being processed.",
+        )
+    if material.processing_status == PROCESSING_STATUS_COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This material has already been processed.",
+        )
+    if not Path(material.file_path).exists():
+        material.processing_error = "Uploaded file is missing. Please delete and upload it again."
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=material.processing_error,
+        )
+
+    material.processing_status = PROCESSING_STATUS_PENDING
+    material.processing_error = None
+    material.extracted_text = None
+    material.page_count = None
+    await db.flush()
+    await db.refresh(material)
+
+    background_tasks.add_task(
+        _parse_and_update,
+        material.id,
+        material.file_path,
+        material.file_type,
+    )
+    return MaterialResponse.model_validate(material)
 
 
 @router.delete(

@@ -19,7 +19,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
-import { coursesApi, examsApi } from '@/lib/api';
+import { coursesApi, examsApi, extractErrorMessage } from '@/lib/api';
 import { formatDate, getScoreColor } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import type { Course, Exam } from '@/types';
@@ -152,12 +152,7 @@ export default function DashboardPage() {
       setIsCreateOpen(false);
       reset();
     } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { data?: { detail?: string } } };
-        setCreateError(axiosErr.response?.data?.detail || 'Failed to create course.');
-      } else {
-        setCreateError('Failed to create course. Please try again.');
-      }
+      setCreateError(extractErrorMessage(err, 'Failed to create course. Please try again.'));
     }
   };
 
@@ -171,11 +166,7 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['recentExams'] });
       setCourseToDelete(null);
     } catch (err: unknown) {
-      const detail =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-          : null;
-      setDeleteError(detail || 'Failed to delete course. Please try again.');
+      setDeleteError(extractErrorMessage(err, 'Failed to delete course. Please try again.'));
     } finally {
       setIsDeleting(false);
     }

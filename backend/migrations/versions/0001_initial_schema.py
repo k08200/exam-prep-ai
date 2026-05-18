@@ -8,6 +8,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0001_initial_schema"
@@ -16,10 +17,31 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _uuid_type():
+    return postgresql.UUID(as_uuid=True).with_variant(sa.String(length=36), "sqlite")
+
+
+def _add_column_if_missing(table_name: str, column: sa.Column) -> None:
+    bind = op.get_bind()
+    columns = {col["name"] for col in inspect(bind).get_columns(table_name)}
+    if column.name not in columns:
+        op.add_column(table_name, column)
+
+
 def upgrade() -> None:
+    bind = op.get_bind()
+    existing_tables = set(inspect(bind).get_table_names())
+    if "users" in existing_tables:
+        if "materials" in existing_tables:
+            _add_column_if_missing(
+                "materials",
+                sa.Column("processing_error", sa.Text(), nullable=True),
+            )
+        return
+
     op.create_table(
         "users",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column("id", _uuid_type(), primary_key=True, nullable=False),
         sa.Column("email", sa.String(length=255), nullable=False),
         sa.Column("hashed_password", sa.String(length=255), nullable=False),
         sa.Column("full_name", sa.String(length=255), nullable=True),
@@ -31,8 +53,8 @@ def upgrade() -> None:
 
     op.create_table(
         "courses",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", _uuid_type(), primary_key=True, nullable=False),
+        sa.Column("user_id", _uuid_type(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("professor_name", sa.String(length=255), nullable=True),
@@ -44,8 +66,8 @@ def upgrade() -> None:
 
     op.create_table(
         "materials",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("course_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("courses.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", _uuid_type(), primary_key=True, nullable=False),
+        sa.Column("course_id", _uuid_type(), sa.ForeignKey("courses.id", ondelete="CASCADE"), nullable=False),
         sa.Column("filename", sa.String(length=512), nullable=False),
         sa.Column("original_filename", sa.String(length=512), nullable=False),
         sa.Column("file_type", sa.String(length=20), nullable=False),
@@ -62,8 +84,8 @@ def upgrade() -> None:
 
     op.create_table(
         "professor_analyses",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("course_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("courses.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", _uuid_type(), primary_key=True, nullable=False),
+        sa.Column("course_id", _uuid_type(), sa.ForeignKey("courses.id", ondelete="CASCADE"), nullable=False),
         sa.Column("top_concepts", sa.JSON(), nullable=False),
         sa.Column("question_types", sa.JSON(), nullable=False),
         sa.Column("topic_distribution", sa.JSON(), nullable=False),
@@ -79,9 +101,9 @@ def upgrade() -> None:
 
     op.create_table(
         "exams",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("course_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("courses.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", _uuid_type(), primary_key=True, nullable=False),
+        sa.Column("course_id", _uuid_type(), sa.ForeignKey("courses.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("user_id", _uuid_type(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("title", sa.String(length=512), nullable=False),
         sa.Column("mode", sa.String(length=20), nullable=False),
         sa.Column("question_count", sa.Integer(), nullable=False),
@@ -98,9 +120,9 @@ def upgrade() -> None:
 
     op.create_table(
         "concept_tracking",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("course_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("courses.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", _uuid_type(), primary_key=True, nullable=False),
+        sa.Column("user_id", _uuid_type(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("course_id", _uuid_type(), sa.ForeignKey("courses.id", ondelete="CASCADE"), nullable=False),
         sa.Column("concept", sa.String(length=512), nullable=False),
         sa.Column("attempts", sa.Integer(), nullable=False),
         sa.Column("correct_count", sa.Integer(), nullable=False),
@@ -115,8 +137,8 @@ def upgrade() -> None:
 
     op.create_table(
         "exam_questions",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("exam_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("exams.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", _uuid_type(), primary_key=True, nullable=False),
+        sa.Column("exam_id", _uuid_type(), sa.ForeignKey("exams.id", ondelete="CASCADE"), nullable=False),
         sa.Column("question_number", sa.Integer(), nullable=False),
         sa.Column("question_text", sa.Text(), nullable=False),
         sa.Column("question_type", sa.String(length=30), nullable=False),
@@ -131,10 +153,10 @@ def upgrade() -> None:
 
     op.create_table(
         "student_responses",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("exam_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("exams.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("question_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("exam_questions.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", _uuid_type(), primary_key=True, nullable=False),
+        sa.Column("exam_id", _uuid_type(), sa.ForeignKey("exams.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("question_id", _uuid_type(), sa.ForeignKey("exam_questions.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("user_id", _uuid_type(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("student_answer", sa.Text(), nullable=False),
         sa.Column("is_correct", sa.Boolean(), nullable=True),
         sa.Column("score", sa.Float(), nullable=True),

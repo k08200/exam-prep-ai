@@ -318,12 +318,27 @@ async def test_file_parser_dispatch_pdf(parser: FileParser) -> None:
         os.unlink(path)
 
 
-def test_get_claude_service_returns_mock_when_flag_set() -> None:
+def test_get_claude_service_returns_mock_when_flag_set(monkeypatch) -> None:
     """get_claude_service() returns MockClaudeService when USE_MOCK_CLAUDE=True."""
+    from app.core.config import settings
     from app.services import get_claude_service
     from app.services.mock_claude_service import MockClaudeService
+
+    monkeypatch.setattr(settings, "USE_MOCK_CLAUDE", True)
     service = get_claude_service()
     assert isinstance(service, MockClaudeService)
+
+
+def test_get_claude_service_requires_key_for_real_mode(monkeypatch) -> None:
+    """Real Claude mode fails fast when the API key is missing."""
+    from app.core.config import settings
+    from app.services import get_claude_service
+
+    monkeypatch.setattr(settings, "USE_MOCK_CLAUDE", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "")
+
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+        get_claude_service()
 
 
 @pytest.mark.asyncio

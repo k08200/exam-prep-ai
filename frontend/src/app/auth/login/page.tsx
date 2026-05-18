@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { Brain, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
+import { extractErrorMessage } from '@/lib/api';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -34,18 +35,7 @@ export default function LoginPage() {
     try {
       await login(data.email, data.password);
     } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { data?: { detail?: string }; status?: number } };
-        if (axiosErr.response?.status === 401) {
-          setServerError('Invalid email or password. Please try again.');
-        } else {
-          setServerError(
-            axiosErr.response?.data?.detail || 'An error occurred. Please try again.'
-          );
-        }
-      } else {
-        setServerError('Unable to connect. Please check your connection.');
-      }
+      setServerError(extractErrorMessage(err, 'Unable to sign in. Please try again.'));
     }
   };
 

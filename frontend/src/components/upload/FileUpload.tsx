@@ -3,7 +3,7 @@ import { useState, useCallback, useRef, DragEvent, ChangeEvent } from 'react';
 import { Upload, X, FileText, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { formatFileSize } from '@/lib/utils';
-import { materialsApi } from '@/lib/api';
+import { extractErrorMessage, materialsApi } from '@/lib/api';
 
 const ACCEPTED_TYPES = [
   'application/pdf',
@@ -154,12 +154,11 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
         onSuccess();
       }, 800);
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Upload failed. Please try again.';
+      const message = extractErrorMessage(err, 'Upload failed. Please try again.');
       setSelectedFiles((prev) =>
         prev.map((f) =>
           f.status === 'uploading'
-            ? { ...f, status: 'error', error: 'Upload failed', progress: 0 }
+            ? { ...f, status: 'error', error: message, progress: 0 }
             : f
         )
       );

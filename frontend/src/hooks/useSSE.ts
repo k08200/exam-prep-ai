@@ -1,6 +1,7 @@
 'use client';
 import { useState, useCallback, useRef } from 'react';
 import Cookies from 'js-cookie';
+import { extractErrorMessage } from '@/lib/api';
 
 interface SSEEvent {
   type: string;
@@ -46,7 +47,14 @@ export function useSSE() {
         });
 
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          let detail = `Request failed with status ${response.status}.`;
+          try {
+            const payload = await response.json();
+            if (typeof payload?.detail === 'string') detail = payload.detail;
+          } catch {
+            // keep status fallback
+          }
+          throw new Error(extractErrorMessage(new Error(detail), detail));
         }
 
         const reader = response.body?.getReader();

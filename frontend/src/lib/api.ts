@@ -8,6 +8,26 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+export function extractErrorMessage(
+  error: unknown,
+  fallback = 'Something went wrong. Please try again.'
+): string {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      const first = detail[0];
+      if (typeof first?.msg === 'string') return first.msg;
+    }
+    if (error.response?.status) {
+      return `Request failed with status ${error.response.status}.`;
+    }
+    if (error.message) return error.message;
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 // Request interceptor: attach JWT token
 api.interceptors.request.use((config) => {
   const token = Cookies.get('access_token');
@@ -80,6 +100,8 @@ export const materialsApi = {
   list: (courseId: string) => api.get(`/courses/${courseId}/materials`),
   delete: (courseId: string, materialId: string) =>
     api.delete(`/courses/${courseId}/materials/${materialId}`),
+  retry: (courseId: string, materialId: string) =>
+    api.post(`/courses/${courseId}/materials/${materialId}/retry`),
 };
 
 // Analysis - returns SSE stream URL
