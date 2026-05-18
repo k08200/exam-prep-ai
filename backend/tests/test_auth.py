@@ -41,6 +41,40 @@ async def test_register_duplicate_email_fails(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_register_email_is_case_insensitive(client: AsyncClient) -> None:
+    """Email addresses are canonicalized so case variants cannot create duplicates."""
+    resp1 = await client.post(
+        "/auth/register",
+        json={"email": "MixedCase@example.com", "password": "securepass123"},
+    )
+    assert resp1.status_code == 201
+    assert resp1.json()["email"] == "mixedcase@example.com"
+
+    resp2 = await client.post(
+        "/auth/register",
+        json={"email": "mixedcase@EXAMPLE.com", "password": "securepass123"},
+    )
+    assert resp2.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_login_email_is_case_insensitive(client: AsyncClient) -> None:
+    """A user can log in with email casing different from registration."""
+    await client.post(
+        "/auth/register",
+        json={"email": "login-case@example.com", "password": "securepass123"},
+    )
+
+    resp = await client.post(
+        "/auth/login",
+        data={"username": "LOGIN-CASE@EXAMPLE.COM", "password": "securepass123"},
+    )
+
+    assert resp.status_code == 200
+    assert "access_token" in resp.json()
+
+
+@pytest.mark.asyncio
 async def test_register_invalid_email_fails(client: AsyncClient) -> None:
     """Registering with a malformed email returns 422 Unprocessable Entity."""
     resp = await client.post(

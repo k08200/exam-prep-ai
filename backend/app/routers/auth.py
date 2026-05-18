@@ -16,13 +16,19 @@ from app.schemas.auth import Token, UserCreate, UserResponse, UserUpdate, Passwo
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _normalize_email(email: str) -> str:
+    """Use one canonical form for login, registration, and token lookup."""
+    return email.strip().lower()
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     user_in: UserCreate,
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """Register a new user account."""
-    result = await db.execute(select(User).where(User.email == user_in.email))
+    email = _normalize_email(str(user_in.email))
+    result = await db.execute(select(User).where(User.email == email))
     existing = result.scalar_one_or_none()
     if existing is not None:
         raise HTTPException(
@@ -31,7 +37,7 @@ async def register(
         )
 
     new_user = User(
-        email=user_in.email,
+        email=email,
         hashed_password=get_password_hash(user_in.password),
         full_name=user_in.full_name,
     )
@@ -47,7 +53,8 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> Token:
     """Authenticate a user and return a JWT access token."""
-    result = await db.execute(select(User).where(User.email == form_data.username))
+    email = _normalize_email(form_data.username)
+    result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
     if user is None or not verify_password(form_data.password, user.hashed_password):

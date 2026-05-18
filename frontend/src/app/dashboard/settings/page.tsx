@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -41,6 +41,7 @@ export default function SettingsPage() {
   const {
     register,
     handleSubmit,
+    reset: resetProfile,
     formState: { errors, isSubmitting },
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -55,6 +56,10 @@ export default function SettingsPage() {
     reset: resetPw,
     formState: { errors: pwErrors, isSubmitting: isPwSubmitting },
   } = useForm<PasswordFormData>({ resolver: zodResolver(passwordSchema) });
+
+  useEffect(() => {
+    resetProfile({ full_name: user?.full_name || '' });
+  }, [resetProfile, user?.full_name]);
 
   const onProfileSubmit = async (data: ProfileFormData) => {
     try {
