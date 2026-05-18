@@ -55,7 +55,7 @@ class ExamDetailResponse(ExamResponse):
 
 class StudentAnswerSubmit(BaseModel):
     question_id: uuid.UUID
-    student_answer: str = Field(min_length=1)
+    student_answer: str = ""
 
 
 class ExamSubmit(BaseModel):

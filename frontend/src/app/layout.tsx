@@ -1,13 +1,6 @@
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from './providers';
-
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   title: {
@@ -18,7 +11,11 @@ export const metadata: Metadata = {
     'AI-powered personalized exam preparation. Upload lecture materials, analyze your professor\'s exam style, and generate unlimited mock exams.',
   keywords: ['exam prep', 'AI', 'study', 'mock exam', 'personalized learning'],
   authors: [{ name: 'Exam Prep AI' }],
-  viewport: 'width=device-width, initial-scale=1',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
   themeColor: '#2563eb',
 };
 
@@ -28,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en">
       <body className="min-h-screen bg-gray-50 antialiased">
         <Providers>{children}</Providers>
       </body>

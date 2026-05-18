@@ -65,14 +65,16 @@ export function useSSE() {
               try {
                 const data: SSEEvent = JSON.parse(line.slice(6));
                 if (data.tokens_used) {
-                  setTokensUsed((prev) => prev + data.tokens_used!);
+                  setTokensUsed((prev) => Math.max(prev, data.tokens_used!));
                 }
                 if (data.total_tokens) {
                   setTokensUsed(data.total_tokens);
                 }
                 options.onEvent(data);
                 if (data.type === 'complete') options.onComplete?.();
-                if (data.type === 'error') options.onError?.(data.error || 'Unknown error');
+                if (data.type === 'error') {
+                  options.onError?.(data.error || data.content || 'Unknown error');
+                }
               } catch {
                 // ignore parse errors for malformed SSE lines
               }

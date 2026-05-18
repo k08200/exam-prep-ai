@@ -19,7 +19,6 @@ import { ExamResults } from '@/components/exam/ExamResults';
 import { examsApi } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import type { Exam, ExamResult } from '@/types';
-import Cookies from 'js-cookie';
 
 export default function ExamPage() {
   const params = useParams();
@@ -74,91 +73,27 @@ export default function ExamPage() {
     setIsGrading(true);
     setGradingText('');
 
-    const token = Cookies.get('access_token');
-
     try {
-      // Stream the grading response
       const submissionAnswers = questions.map((q) => ({
         question_id: q.id,
         student_answer: answers[q.id] || '',
       }));
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/exams/${examId}/submit`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ answers: submissionAnswers }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Submission failed: ${response.status}`);
-      }
-
-      // Check if streaming or JSON response
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('text/event-stream')) {
-        // SSE streaming grading
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-        if (!reader) throw new Error('No response body');
-
-        let buffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.type === 'content' || data.type === 'thinking') {
-                  setGradingText((prev) => prev + (data.content || ''));
-                }
-                if (data.type === 'complete' && data.result) {
-                  setExamResult(data.result);
-                  queryClient.invalidateQueries({ queryKey: ['exam', examId] });
-                  queryClient.invalidateQueries({ queryKey: ['exams', exam?.course_id] });
-                }
-              } catch {
-                // ignore
-              }
-            }
-          }
-        }
-      } else {
-        // Regular JSON response
-        const data = await response.json();
-        setExamResult(data);
-        queryClient.invalidateQueries({ queryKey: ['exam', examId] });
+      setGradingText('Submitting answers...');
+      const res = await examsApi.submit(examId, submissionAnswers);
+      setExamResult(res.data);
+      queryClient.invalidateQueries({ queryKey: ['exam', examId] });
+      if (exam?.course_id) {
         queryClient.invalidateQueries({ queryKey: ['exams', exam?.course_id] });
+        queryClient.invalidateQueries({ queryKey: ['recentExams'] });
       }
     } catch (err: unknown) {
-      // Fallback: try the standard axios submit
-      try {
-        const res = await examsApi.submit(
-          examId,
-          questions.map((q) => ({
-            question_id: q.id,
-            student_answer: answers[q.id] || '',
-          }))
-        );
-        setExamResult(res.data);
-        queryClient.invalidateQueries({ queryKey: ['exam', examId] });
-        if (exam?.course_id) {
-          queryClient.invalidateQueries({ queryKey: ['exams', exam.course_id] });
-        }
-      } catch (fallbackErr: unknown) {
-        const msg =
-          fallbackErr instanceof Error
-            ? fallbackErr.message
-            : 'Submission failed. Please try again.';
-        setSubmitError(msg);
-      }
+      const detail =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          : null;
+      const msg = err instanceof Error ? err.message : 'Submission failed. Please try again.';
+      setSubmitError(detail || msg);
     } finally {
       setIsSubmitting(false);
       setIsGrading(false);

@@ -332,7 +332,7 @@ async def submit_exam(
     correct_count = 0
 
     # Build a map of submitted answers
-    answers_map = {a.question_id: a.student_answer for a in submission.answers}
+    answers_map = {a.question_id: a.student_answer.strip() for a in submission.answers}
 
     for question in questions_by_id.values():
         student_answer = answers_map.get(question.id, "")

@@ -33,7 +33,7 @@ const courseSchema = z.object({
 
 type CourseFormData = z.infer<typeof courseSchema>;
 
-function CourseCard({ course, onDelete }: { course: Course; onDelete: (id: string) => void }) {
+function CourseCard({ course, onDelete }: { course: Course; onDelete: (course: Course) => void }) {
   return (
     <Card className="hover:shadow-md transition-all group">
       <CardContent className="py-5">
@@ -73,7 +73,7 @@ function CourseCard({ course, onDelete }: { course: Course; onDelete: (id: strin
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onDelete(course.id);
+              onDelete(course);
             }}
             className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
             aria-label="Delete course"
@@ -108,6 +108,9 @@ function CourseCard({ course, onDelete }: { course: Course; onDelete: (id: strin
 export default function DashboardPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [courseToDelete, setCourseToDelete] = useState<Course | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -158,13 +161,23 @@ export default function DashboardPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this course and all its materials and exams?')) return;
+  const handleDelete = async () => {
+    if (!courseToDelete) return;
+    setIsDeleting(true);
+    setDeleteError(null);
     try {
-      await coursesApi.delete(id);
+      await coursesApi.delete(courseToDelete.id);
       queryClient.invalidateQueries({ queryKey: ['courses'] });
-    } catch {
-      // deletion failure handled silently
+      queryClient.invalidateQueries({ queryKey: ['recentExams'] });
+      setCourseToDelete(null);
+    } catch (err: unknown) {
+      const detail =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          : null;
+      setDeleteError(detail || 'Failed to delete course. Please try again.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -297,7 +310,14 @@ export default function DashboardPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {courses.map((course) => (
-            <CourseCard key={course.id} course={course} onDelete={handleDelete} />
+            <CourseCard
+              key={course.id}
+              course={course}
+              onDelete={(selectedCourse) => {
+                setCourseToDelete(selectedCourse);
+                setDeleteError(null);
+              }}
+            />
           ))}
           {/* Add more card */}
           <button
@@ -392,6 +412,47 @@ export default function DashboardPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={!!courseToDelete}
+        onClose={() => {
+          if (!isDeleting) {
+            setCourseToDelete(null);
+            setDeleteError(null);
+          }
+        }}
+        title="Delete Course"
+        description="This removes the course, materials, exams, and analytics."
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Delete <span className="font-medium text-gray-900">{courseToDelete?.name}</span>?
+          </p>
+          {deleteError && (
+            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              {deleteError}
+            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={isDeleting}
+              onClick={() => {
+                setCourseToDelete(null);
+                setDeleteError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" size="sm" loading={isDeleting} onClick={handleDelete}>
+              Delete Course
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

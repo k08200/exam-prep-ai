@@ -364,6 +364,50 @@ async def test_submit_wrong_answer(
 
 
 @pytest.mark.asyncio
+async def test_submit_unanswered_question_is_allowed(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """A blank answer is accepted so the UI can mark unanswered questions incorrect."""
+    course_id = test_course["id"]
+    exam_id, q_ids = await _create_exam_with_questions(
+        client, auth_headers, course_id, db_session
+    )
+
+    async def grade_by_answer(question: dict, student_answer: str, professor_context: str) -> dict:
+        is_correct = bool(student_answer)
+        return {
+            "is_correct": is_correct,
+            "score": 1.0 if is_correct else 0.0,
+            "feedback": "Answered" if is_correct else "No answer provided.",
+            "tokens_used": 50,
+        }
+
+    with patch(
+        "app.routers.exams.claude_service.grade_response",
+        new=AsyncMock(side_effect=grade_by_answer),
+    ):
+        resp = await client.post(
+            f"/exams/{exam_id}/submit",
+            json={
+                "answers": [
+                    {"question_id": q_ids[0], "student_answer": ""},
+                    {"question_id": q_ids[1], "student_answer": "A"},
+                ]
+            },
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    result = resp.json()
+    assert result["total_questions"] == 2
+    assert result["correct_count"] == 1
+    assert any(r["student_answer"] == "" and not r["is_correct"] for r in result["results"])
+
+
+@pytest.mark.asyncio
 async def test_submit_exam_twice_returns_409(
     client: AsyncClient,
     auth_headers: dict,

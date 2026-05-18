@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Trash2, FileText, Image, Presentation, FileType, Upload } from 'lucide-react';
+import { Trash2, FileText, Image, Presentation, FileType, Upload, AlertCircle } from 'lucide-react';
 import { materialsApi } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
 import { formatFileSize, formatDate } from '@/lib/utils';
 import type { Material } from '@/types';
 
@@ -57,6 +58,9 @@ const STATUS_CONFIG: Record<
 
 export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
   const queryClient = useQueryClient();
+  const [materialToDelete, setMaterialToDelete] = useState<Material | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const { data: materials = [], isLoading } = useQuery<Material[]>({
     queryKey: ['materials', courseId],
@@ -75,17 +79,26 @@ export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
   });
 
   const handleDelete = useCallback(
-    async (materialId: string) => {
-      if (!confirm('Delete this material?')) return;
+    async () => {
+      if (!materialToDelete) return;
+      setIsDeleting(true);
+      setDeleteError(null);
       try {
-        await materialsApi.delete(courseId, materialId);
+        await materialsApi.delete(courseId, materialToDelete.id);
         queryClient.invalidateQueries({ queryKey: ['materials', courseId] });
         queryClient.invalidateQueries({ queryKey: ['courses'] });
-      } catch {
-        // Error handled silently — user sees UI state unchanged
+        setMaterialToDelete(null);
+      } catch (err: unknown) {
+        const detail =
+          err && typeof err === 'object' && 'response' in err
+            ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+            : null;
+        setDeleteError(detail || 'Failed to delete material. Please try again.');
+      } finally {
+        setIsDeleting(false);
       }
     },
-    [courseId, queryClient]
+    [courseId, materialToDelete, queryClient]
   );
 
   if (isLoading) {
@@ -118,71 +131,117 @@ export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-gray-50 border-b border-gray-200">
-            <th className="text-left px-4 py-3 font-medium text-gray-600">File</th>
-            <th className="text-left px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">
-              Size
-            </th>
-            <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-            <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">
-              Pages
-            </th>
-            <th className="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">
-              Uploaded
-            </th>
-            <th className="px-4 py-3" />
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {materials.map((material) => {
-            const statusCfg = STATUS_CONFIG[material.processing_status];
-            return (
-              <tr key={material.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2.5">
-                    {getFileIcon(material.file_type, material.original_filename)}
+    <>
+      <div className="overflow-hidden rounded-xl border border-gray-200">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="text-left px-4 py-3 font-medium text-gray-600">File</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">
+                Size
+              </th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">
+                Pages
+              </th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">
+                Uploaded
+              </th>
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {materials.map((material) => {
+              const statusCfg = STATUS_CONFIG[material.processing_status];
+              return (
+                <tr key={material.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      {getFileIcon(material.file_type, material.original_filename)}
+                      <span
+                        className="font-medium text-gray-800 truncate max-w-[200px]"
+                        title={material.original_filename}
+                      >
+                        {material.original_filename}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">
+                    {formatFileSize(material.file_size)}
+                  </td>
+                  <td className="px-4 py-3">
                     <span
-                      className="font-medium text-gray-800 truncate max-w-[200px]"
-                      title={material.original_filename}
+                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${statusCfg.className}`}
                     >
-                      {material.original_filename}
+                      <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass}`} />
+                      {statusCfg.label}
                     </span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">
-                  {formatFileSize(material.file_size)}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${statusCfg.className}`}
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass}`} />
-                    {statusCfg.label}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-gray-500 hidden md:table-cell">
-                  {material.page_count ?? '—'}
-                </td>
-                <td className="px-4 py-3 text-gray-400 hidden lg:table-cell">
-                  {formatDate(material.created_at)}
-                </td>
-                <td className="px-4 py-3">
-                  <button
-                    onClick={() => handleDelete(material.id)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                    aria-label="Delete material"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 hidden md:table-cell">
+                    {material.page_count ?? '—'}
+                  </td>
+                  <td className="px-4 py-3 text-gray-400 hidden lg:table-cell">
+                    {formatDate(material.created_at)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => {
+                        setMaterialToDelete(material);
+                        setDeleteError(null);
+                      }}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                      aria-label="Delete material"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <Modal
+        isOpen={!!materialToDelete}
+        onClose={() => {
+          if (!isDeleting) {
+            setMaterialToDelete(null);
+            setDeleteError(null);
+          }
+        }}
+        title="Delete Material"
+        description="This removes the uploaded file from this course."
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 break-words">
+            Delete <span className="font-medium text-gray-900">{materialToDelete?.original_filename}</span>?
+          </p>
+          {deleteError && (
+            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              {deleteError}
+            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={isDeleting}
+              onClick={() => {
+                setMaterialToDelete(null);
+                setDeleteError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" size="sm" loading={isDeleting} onClick={handleDelete}>
+              Delete Material
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }

@@ -51,6 +51,7 @@ export default function CourseDetailPage() {
 
   const [activeTab, setActiveTab] = useState<TabId>('materials');
   const [showUpload, setShowUpload] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [analysisText, setAnalysisText] = useState('');
   const [analysisComplete, setAnalysisComplete] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -128,7 +129,7 @@ export default function CourseDetailPage() {
       method: 'POST',
       body: {},
       onEvent: (event) => {
-        if (event.type === 'thinking' || event.type === 'content') {
+        if (event.type === 'thinking' || event.type === 'text' || event.type === 'content') {
           setAnalysisText((prev) => prev + (event.content || ''));
         }
         if (event.type === 'complete') {
@@ -169,7 +170,14 @@ export default function CourseDetailPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        let detail = `HTTP error! status: ${response.status}`;
+        try {
+          const payload = await response.json();
+          detail = payload.detail || detail;
+        } catch {
+          // keep the status-based fallback
+        }
+        throw new Error(detail);
       }
 
       const reader = response.body?.getReader();
@@ -215,7 +223,7 @@ export default function CourseDetailPage() {
                 }
               }
               if (data.type === 'error') {
-                setGenerateError(data.error || 'Generation failed');
+                setGenerateError(data.error || data.content || 'Generation failed');
               }
             } catch {
               // ignore parse errors
@@ -333,10 +341,17 @@ export default function CourseDetailPage() {
                   onSuccess={() => {
                     queryClient.invalidateQueries({ queryKey: ['materials', courseId] });
                     queryClient.invalidateQueries({ queryKey: ['course', courseId] });
+                    setUploadError(null);
                     setShowUpload(false);
                   }}
-                  onError={(msg) => alert(msg)}
+                  onError={setUploadError}
                 />
+                {uploadError && (
+                  <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 mt-4">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    {uploadError}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -665,7 +680,12 @@ export default function CourseDetailPage() {
             <div className="flex justify-end gap-3 pt-2">
               <Button
                 variant="secondary"
-                onClick={() => setIsGenerateOpen(false)}
+                onClick={() => {
+                  setIsGenerateOpen(false);
+                  setGenerateError(null);
+                  setGenerateText('');
+                  setGenerateOptions((prev) => ({ ...prev, title: '' }));
+                }}
               >
                 Cancel
               </Button>
