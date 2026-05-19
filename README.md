@@ -4,7 +4,7 @@ Hyper-personalized AI exam prep. Upload your lecture materials → AI learns you
 
 ## Features
 - Upload syllabus, lecture slides, past exams (PDF, PPT, DOCX, images)
-- AI analyzes professor's style using Claude claude-opus-4-7 with extended thinking
+- AI analyzes professor's style using Claude Opus 4.1 with extended thinking
 - Generates unlimited mock exams matching your professor's exact style
 - Real-time scoring + professor-perspective explanations
 - Weakness heatmap tracking your weakest concepts
@@ -81,7 +81,7 @@ exam-prep-ai/
 
 ## Claude API Integration
 
-Uses Claude claude-opus-4-7 with extended thinking:
+Uses Claude Opus 4.1 with extended thinking:
 - **Pattern Analysis**: 30,000 token thinking budget for deep professor style extraction
 - **Exam Generation**: 10,000 token thinking budget per question for style verification
 - **Grading**: Instant grading with professor-perspective explanations
@@ -177,6 +177,6 @@ npm run dev
 | RUN_MIGRATIONS | Run Alembic before backend startup | No (default: true) |
 | AUTO_CREATE_TABLES | Fallback SQLAlchemy table creation | No (default in Docker: false) |
 | MATERIAL_PROCESSING_STALE_MINUTES | Mark abandoned material parsing jobs failed after this many minutes | No (default: 30) |
-| CLAUDE_MODEL | Claude model ID | No (default: claude-opus-4-7) |
+| CLAUDE_MODEL | Claude model ID | No (default: claude-opus-4-1-20250805) |
 | THINKING_BUDGET_ANALYSIS | Thinking tokens for analysis | No (default: 30000) |
 | THINKING_BUDGET_GENERATION | Thinking tokens for generation | No (default: 10000) |

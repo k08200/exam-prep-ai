@@ -1,8 +1,10 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Set
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env")
+
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/exam_prep_ai"
 
@@ -35,15 +37,12 @@ class Settings(BaseSettings):
     RUN_MIGRATIONS: bool = True
 
     # Claude model config
-    CLAUDE_MODEL: str = "claude-opus-4-7"
+    CLAUDE_MODEL: str = "claude-opus-4-1-20250805"
     # Extended thinking budgets (tokens).
     # NOTE: The API does not support thinking.type = "adaptive".
     # We use {"type": "enabled", "budget_tokens": N} for explicit control.
     THINKING_BUDGET_ANALYSIS: int = 30000  # for professor style analysis (deep)
     THINKING_BUDGET_GENERATION: int = 10000  # for exam question generation
-
-    class Config:
-        env_file = ".env"
 
 
 settings = Settings()

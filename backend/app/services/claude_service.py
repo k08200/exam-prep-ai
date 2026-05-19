@@ -99,7 +99,7 @@ class ClaudeService:
     def __init__(self) -> None:
         # AsyncAnthropic for non-blocking streaming in FastAPI's async context
         self.client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self.model = settings.CLAUDE_MODEL  # "claude-opus-4-7"
+        self.model = settings.CLAUDE_MODEL
 
     async def analyze_professor_style(
         self,

@@ -81,7 +81,8 @@ class FileParser:
             doc.close()
             return {"text": full_text, "page_count": page_count}
 
-        return await asyncio.get_event_loop().run_in_executor(None, _sync_parse)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _sync_parse)
 
     async def parse_pptx(self, file_path: str) -> dict:
         """
@@ -127,7 +128,8 @@ class FileParser:
             full_text = "\n\n".join(slide_texts)
             return {"text": full_text, "page_count": len(prs.slides)}
 
-        return await asyncio.get_event_loop().run_in_executor(None, _sync_parse)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _sync_parse)
 
     async def parse_docx(self, file_path: str) -> dict:
         """
@@ -159,7 +161,8 @@ class FileParser:
             # DOCX doesn't have a native "page count"; approximate by paragraph count
             return {"text": full_text, "page_count": None}
 
-        return await asyncio.get_event_loop().run_in_executor(None, _sync_parse)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _sync_parse)
 
     async def parse_image(self, file_path: str) -> dict:
         """
@@ -179,4 +182,5 @@ class FileParser:
             text = pytesseract.image_to_string(img, lang="eng+kor")
             return {"text": text.strip(), "page_count": 1}
 
-        return await asyncio.get_event_loop().run_in_executor(None, _sync_parse)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _sync_parse)

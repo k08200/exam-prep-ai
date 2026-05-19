@@ -341,12 +341,22 @@ def test_get_claude_service_requires_key_for_real_mode(monkeypatch) -> None:
         get_claude_service()
 
 
+def test_default_claude_model_is_valid_api_id() -> None:
+    """Default model uses the Anthropic API model identifier, not a display name."""
+    from app.core.config import settings
+
+    assert settings.CLAUDE_MODEL == "claude-opus-4-1-20250805"
+
+
 @pytest.mark.asyncio
 async def test_health_endpoint(client) -> None:
-    """GET /health returns status ok."""
+    """GET /health returns liveness and AI mode metadata."""
     resp = await client.get("/health")
     assert resp.status_code == 200
-    assert resp.json()["status"] == "ok"
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["ai_mode"] == "mock"
+    assert data["claude_configured"] is False
 
 
 @pytest.mark.asyncio

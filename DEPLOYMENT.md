@@ -23,7 +23,7 @@ Production Claude mode must be explicit:
 ```bash
 USE_MOCK_CLAUDE=false
 ANTHROPIC_API_KEY=your_anthropic_key
-CLAUDE_MODEL=claude-opus-4-7
+CLAUDE_MODEL=claude-opus-4-1-20250805
 ```
 
 The backend now fails fast if `USE_MOCK_CLAUDE=false` and `ANTHROPIC_API_KEY` is empty. Confirm the active mode with:

@@ -1,4 +1,3 @@
-import asyncio
 import os
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
@@ -20,14 +19,6 @@ from app.core.database import Base, get_db
 from app.main import app
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Session-scoped event loop for all async tests."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture(scope="session")
