@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
 
@@ -9,6 +10,11 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("USE_MOCK_CLAUDE", "true")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-32-chars-minimum!!")
+os.environ.setdefault("UPLOAD_DIR", "/tmp/test-uploads")
 
 from app.core.database import Base, get_db
 from app.main import app

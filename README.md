@@ -139,6 +139,15 @@ cd backend
 pytest --cov=app --cov-report=term-missing
 ```
 
+### Run Local Smoke Test
+Start the backend first, then run:
+```bash
+cd backend
+E2E_API_URL=http://127.0.0.1:8000 python scripts/e2e_smoke.py
+```
+
+The smoke test covers registration, login, course creation, material upload and retry, analysis streaming, exam generation, submission, and saved result retrieval.
+
 ### Database Migrations
 ```bash
 cd backend

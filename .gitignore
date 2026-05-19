@@ -19,6 +19,7 @@ node_modules/
 .next/
 out/
 .npm
+*.tsbuildinfo
 
 # Environment
 .env
@@ -42,3 +43,4 @@ backend/uploads/
 
 # DB
 *.sqlite3
+*.db
