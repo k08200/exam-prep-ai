@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
@@ -128,5 +129,11 @@ async def delete_course(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
     if course.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    material_paths_result = await db.execute(
+        select(Material.file_path).where(Material.course_id == course_id)
+    )
+    for file_path in material_paths_result.scalars().all():
+        Path(file_path).unlink(missing_ok=True)
 
     await db.delete(course)

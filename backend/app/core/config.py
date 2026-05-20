@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     REQUEST_TIMEOUT_SECONDS: float = 60.0
     AUTH_RATE_LIMIT_MAX_FAILURES: int = 5
     AUTH_RATE_LIMIT_WINDOW_SECONDS: int = 300
+    AI_STREAM_HEARTBEAT_SECONDS: float = 15.0
+    AI_STREAM_EVENT_TIMEOUT_SECONDS: float = 180.0
 
     # Set to true to use mock responses (no API key required)
     USE_MOCK_CLAUDE: bool = False
@@ -93,6 +95,10 @@ class Settings(BaseSettings):
             raise RuntimeError("Production AUTH_RATE_LIMIT_MAX_FAILURES must be positive.")
         if self.AUTH_RATE_LIMIT_WINDOW_SECONDS <= 0:
             raise RuntimeError("Production AUTH_RATE_LIMIT_WINDOW_SECONDS must be positive.")
+        if self.AI_STREAM_HEARTBEAT_SECONDS <= 0:
+            raise RuntimeError("Production AI_STREAM_HEARTBEAT_SECONDS must be positive.")
+        if self.AI_STREAM_EVENT_TIMEOUT_SECONDS <= 0:
+            raise RuntimeError("Production AI_STREAM_EVENT_TIMEOUT_SECONDS must be positive.")
 
 
 settings = Settings()

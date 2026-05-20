@@ -428,6 +428,22 @@ async def test_health_endpoint(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_ready_endpoint_checks_dependencies(client, monkeypatch, tmp_path) -> None:
+    """GET /ready checks database access and upload directory writability."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
+
+    resp = await client.get("/ready")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ready"
+    assert data["database"] == "ok"
+    assert data["upload_dir"] == "ok"
+
+
+@pytest.mark.asyncio
 async def test_request_id_header_is_returned(client) -> None:
     """The request middleware returns caller-provided request IDs for tracing."""
     resp = await client.get("/health", headers={"X-Request-ID": "test-request-id"})
@@ -473,6 +489,30 @@ async def test_request_context_middleware_times_out(monkeypatch) -> None:
 
     assert response.status_code == 504
     assert response.headers["X-Request-ID"]
+
+
+@pytest.mark.asyncio
+async def test_sse_iter_with_heartbeat_times_out(monkeypatch) -> None:
+    """SSE helper sends heartbeat events and converts stalled upstream streams to retryable errors."""
+    import asyncio
+
+    from app.core.config import settings
+    from app.core.sse import iter_with_heartbeat
+
+    monkeypatch.setattr(settings, "AI_STREAM_HEARTBEAT_SECONDS", 0.001)
+    monkeypatch.setattr(settings, "AI_STREAM_EVENT_TIMEOUT_SECONDS", 0.004)
+
+    async def stalled_events():
+        await asyncio.sleep(0.02)
+        yield {"type": "text", "content": "too late"}
+
+    events = []
+    async for event in iter_with_heartbeat(stalled_events()):
+        events.append(event)
+
+    assert any(event["type"] == "heartbeat" for event in events)
+    assert events[-1]["type"] == "error"
+    assert events[-1]["retryable"] is True
 
 
 @pytest.mark.asyncio

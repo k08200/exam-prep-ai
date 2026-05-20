@@ -9,6 +9,7 @@
 - Set `RUN_MIGRATIONS=true` unless the platform has a separate migration release step.
 - Set `AUTO_CREATE_TABLES=false` in production.
 - Mount persistent storage for `UPLOAD_DIR`.
+- Tune `REQUEST_TIMEOUT_SECONDS`, `AI_STREAM_HEARTBEAT_SECONDS`, and `AI_STREAM_EVENT_TIMEOUT_SECONDS` for your platform timeout limits.
 
 ## AI Mode
 
@@ -89,6 +90,7 @@ E2E_BASE_URL=https://your-frontend.example.com npm run e2e
 Before routing traffic:
 
 - `/health` returns `status: ok`.
+- `/ready` returns `status: ready`, `database: ok`, and `upload_dir: ok`.
 - `alembic upgrade head` has completed.
 - Frontend build points to the production API URL.
 - `USE_MOCK_CLAUDE` is false only when `ANTHROPIC_API_KEY` is configured.

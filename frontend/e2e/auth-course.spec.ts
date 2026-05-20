@@ -25,6 +25,18 @@ test.describe('core browser flow', () => {
 
     await expect(page.getByText('Browser E2E Biology')).toBeVisible();
 
+    await page.getByRole('link', { name: /open/i }).click();
+    await expect(page.getByRole('heading', { name: 'Browser E2E Biology' })).toBeVisible();
+    await page.getByRole('button', { name: /upload files/i }).click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'browser-e2e.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n'),
+    });
+    await expect(page.getByText('browser-e2e.pdf')).toBeVisible();
+    await page.getByRole('button', { name: /upload 1 file/i }).click();
+    await expect(page.getByText('browser-e2e.pdf')).toBeVisible();
+
     await page.goto('/dashboard/settings');
     await page.locator('#current_password').fill('wrong-password');
     await page.locator('#new_password').fill('NewPassword123');

@@ -4,6 +4,7 @@ The ClaudeService is fully mocked — no real API calls.
 """
 import json
 import uuid
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -237,6 +238,47 @@ async def test_analysis_streaming_format(
         assert line.startswith("data: "), f"Unexpected SSE line: {line!r}"
         # Payload must be valid JSON
         json.loads(line[len("data: "):])
+
+
+@pytest.mark.asyncio
+async def test_analysis_stream_timeout_returns_retryable_error(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    """A stalled analysis stream emits heartbeat frames then a retryable timeout error."""
+    from app.core.config import settings
+
+    course_id = test_course["id"]
+    await _create_completed_material(db_session, uuid.UUID(course_id))
+    await db_session.commit()
+    monkeypatch.setattr(settings, "AI_STREAM_HEARTBEAT_SECONDS", 0.001)
+    monkeypatch.setattr(settings, "AI_STREAM_EVENT_TIMEOUT_SECONDS", 0.004)
+
+    async def stalled_analyze(*args, **kwargs):
+        await asyncio.sleep(0.02)
+        yield {"type": "text", "content": "late", "tokens": 1}
+
+    with patch(
+        "app.routers.analysis.claude_service.analyze_professor_style",
+        return_value=stalled_analyze(),
+    ):
+        resp = await client.post(
+            f"/courses/{course_id}/analysis",
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    events = [
+        json.loads(line[len("data: "):])
+        for line in resp.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert any(event["type"] == "heartbeat" for event in events)
+    assert events[-1]["type"] == "error"
+    assert events[-1]["retryable"] is True
 
 
 @pytest.mark.asyncio

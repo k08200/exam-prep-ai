@@ -1,4 +1,3 @@
-import json
 import uuid
 from typing import AsyncGenerator
 
@@ -9,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.sse import iter_with_heartbeat, sse_event
 from app.models.analysis import ProfessorAnalysis
 from app.models.course import Course
 from app.models.material import Material, PROCESSING_STATUS_COMPLETED
@@ -32,11 +32,6 @@ async def _assert_course_ownership(
     return course
 
 
-def _sse_event(data: dict) -> str:
-    """Format a dict as an SSE event string."""
-    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
 async def _stream_analysis(
     course: Course,
     materials_text: str,
@@ -49,21 +44,29 @@ async def _stream_analysis(
     final_analysis: dict | None = None
 
     try:
-        async for event in claude_service.analyze_professor_style(
-            course_name=course.name,
-            professor_name=course.professor_name or "Unknown Professor",
-            materials_text=materials_text,
+        yield sse_event({"type": "heartbeat"})
+        async for event in iter_with_heartbeat(
+            claude_service.analyze_professor_style(
+                course_name=course.name,
+                professor_name=course.professor_name or "Unknown Professor",
+                materials_text=materials_text,
+            )
         ):
             event_type = event.get("type")
-            if event_type == "thinking":
+            if event_type == "heartbeat":
+                yield sse_event(event)
+            elif event_type == "error":
+                yield sse_event(event)
+                return
+            elif event_type == "thinking":
                 thinking_tokens = event.get("tokens", thinking_tokens)
-                yield _sse_event(
+                yield sse_event(
                     {"type": "thinking", "content": event.get("content", ""), "tokens_used": thinking_tokens}
                 )
             elif event_type == "text":
                 raw_text_parts.append(event.get("content", ""))
                 total_tokens = event.get("tokens", total_tokens)
-                yield _sse_event(
+                yield sse_event(
                     {"type": "text", "content": event.get("content", ""), "tokens_used": total_tokens}
                 )
             elif event_type == "complete":
@@ -72,11 +75,17 @@ async def _stream_analysis(
                 thinking_tokens = event.get("thinking_tokens", thinking_tokens)
 
     except Exception as exc:
-        yield _sse_event({"type": "error", "content": str(exc)})
+        yield sse_event({"type": "error", "content": str(exc), "retryable": True})
         return
 
     if final_analysis is None:
-        yield _sse_event({"type": "error", "content": "Analysis did not produce structured output"})
+        yield sse_event(
+            {
+                "type": "error",
+                "content": "Analysis did not produce structured output",
+                "retryable": True,
+            }
+        )
         return
 
     # Persist / upsert analysis to DB
@@ -114,7 +123,7 @@ async def _stream_analysis(
     await db.commit()
     await db.refresh(analysis_record)
 
-    yield _sse_event(
+    yield sse_event(
         {
             "type": "complete",
             "content": "Analysis complete",

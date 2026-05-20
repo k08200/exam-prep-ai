@@ -39,6 +39,11 @@ services:
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
       AUTO_CREATE_TABLES: ${AUTO_CREATE_TABLES:-false}
       MATERIAL_PROCESSING_STALE_MINUTES: ${MATERIAL_PROCESSING_STALE_MINUTES:-30}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-60}
+      AUTH_RATE_LIMIT_MAX_FAILURES: ${AUTH_RATE_LIMIT_MAX_FAILURES:-5}
+      AUTH_RATE_LIMIT_WINDOW_SECONDS: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:-300}
+      AI_STREAM_HEARTBEAT_SECONDS: ${AI_STREAM_HEARTBEAT_SECONDS:-15}
+      AI_STREAM_EVENT_TIMEOUT_SECONDS: ${AI_STREAM_EVENT_TIMEOUT_SECONDS:-180}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:3003,http://127.0.0.1:3003}
     volumes:
       - uploads_data:/app/uploads
@@ -46,7 +51,7 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready')"]
       interval: 10s
       timeout: 5s
       retries: 10

@@ -34,6 +34,7 @@ App available at:
 - Frontend: http://localhost:3003
 - Backend API: http://localhost:8001
 - API Docs: http://localhost:8001/docs
+- Readiness: http://localhost:8001/ready
 
 ### Development With Hot Reload
 ```bash
@@ -48,7 +49,7 @@ The dev override bind-mounts `backend/` and `frontend/` into the containers:
 
 ## Runtime Safety
 
-The backend adds a request ID to every response (`X-Request-ID`), logs request outcomes, caps request setup time with `REQUEST_TIMEOUT_SECONDS`, and rate-limits repeated failed logins with `AUTH_RATE_LIMIT_MAX_FAILURES` over `AUTH_RATE_LIMIT_WINDOW_SECONDS`. Uploads also validate obvious extension/content-type mismatches before saving files.
+The backend adds a request ID to every response (`X-Request-ID`), logs request outcomes, caps request setup time with `REQUEST_TIMEOUT_SECONDS`, and rate-limits repeated failed logins with `AUTH_RATE_LIMIT_MAX_FAILURES` over `AUTH_RATE_LIMIT_WINDOW_SECONDS`. AI streams send heartbeat events and fail with a retryable timeout after `AI_STREAM_EVENT_TIMEOUT_SECONDS` without upstream progress. Uploads also validate obvious extension/content-type mismatches before saving files.
 
 ## Architecture
 
@@ -94,6 +95,10 @@ Uses Claude Opus 4.1 with extended thinking:
 Note: The `thinking: {type: "adaptive"}` specification uses Claude's extended thinking feature implemented as `{"type": "enabled", "budget_tokens": N}` per the current Anthropic API.
 
 ## API Endpoints
+
+### Meta
+- `GET /health` - Liveness probe
+- `GET /ready` - Readiness probe for DB and upload storage
 
 ### Auth
 - `POST /auth/register` - Create account

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.sse import iter_with_heartbeat
 from app.models.analysis import ProfessorAnalysis
 from app.models.course import Course
 from app.models.exam import (
@@ -106,22 +107,31 @@ async def _stream_exam_generation(
         )
 
     try:
-        async for event in claude_service.generate_exam_questions(
-            course_name=course.name,
-            analysis={
-                "top_concepts": analysis.top_concepts,
-                "question_types": analysis.question_types,
-                "topic_distribution": analysis.topic_distribution,
-                "professor_terms": analysis.professor_terms,
-                "exam_patterns": analysis.exam_patterns,
-            },
-            question_count=exam_create.question_count,
-            mode=exam_create.mode,
-            topics=topics,
+        yield _sse_event({"type": "heartbeat"})
+        async for event in iter_with_heartbeat(
+            claude_service.generate_exam_questions(
+                course_name=course.name,
+                analysis={
+                    "top_concepts": analysis.top_concepts,
+                    "question_types": analysis.question_types,
+                    "topic_distribution": analysis.topic_distribution,
+                    "professor_terms": analysis.professor_terms,
+                    "exam_patterns": analysis.exam_patterns,
+                },
+                question_count=exam_create.question_count,
+                mode=exam_create.mode,
+                topics=topics,
+            )
         ):
             event_type = event.get("type")
 
-            if event_type == "question":
+            if event_type == "heartbeat":
+                yield _sse_event(event)
+            elif event_type == "error":
+                await db.rollback()
+                yield _sse_event(event)
+                return
+            elif event_type == "question":
                 q_data = event.get("question", {})
                 tokens = event.get("tokens", 0)
                 total_tokens += tokens
@@ -165,7 +175,7 @@ async def _stream_exam_generation(
 
     except Exception as exc:
         await db.rollback()
-        yield _sse_event({"type": "error", "content": str(exc)})
+        yield _sse_event({"type": "error", "content": str(exc), "retryable": True})
         return
 
     generated_count = question_number - 1
@@ -178,6 +188,7 @@ async def _stream_exam_generation(
                     "Exam generation failed: expected "
                     f"{exam_create.question_count} questions, got {generated_count}."
                 ),
+                "retryable": True,
             }
         )
         return

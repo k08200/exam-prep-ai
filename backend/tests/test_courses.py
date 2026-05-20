@@ -3,6 +3,8 @@ TDD tests for courses CRUD endpoints.
 """
 import pytest
 from httpx import AsyncClient
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 
 @pytest.mark.asyncio
@@ -199,6 +201,41 @@ async def test_delete_course(client: AsyncClient, auth_headers: dict) -> None:
 
     get_resp = await client.get(f"/courses/{course_id}", headers=auth_headers)
     assert get_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_course_removes_uploaded_files(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Deleting a course removes files owned by that course from disk."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
+
+    create_resp = await client.post(
+        "/courses", json={"name": "Delete Files"}, headers=auth_headers
+    )
+    course_id = create_resp.json()["id"]
+
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("course_delete.pdf", b"%PDF-1.4\n%%EOF\n", "application/pdf")},
+            headers=auth_headers,
+        )
+
+    assert upload_resp.status_code == 201
+    uploaded_files = [path for path in tmp_path.rglob("*") if path.is_file()]
+    assert len(uploaded_files) == 1
+    assert uploaded_files[0].exists()
+
+    del_resp = await client.delete(f"/courses/{course_id}", headers=auth_headers)
+
+    assert del_resp.status_code == 204
+    assert not uploaded_files[0].exists()
 
 
 @pytest.mark.asyncio

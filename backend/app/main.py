@@ -1,11 +1,14 @@
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.database import init_db
+from app.core.database import get_db, init_db
 from app.core.middleware import request_context_middleware
 from app.routers import auth, courses, materials, analysis, exams
 
@@ -63,6 +66,22 @@ async def health_check() -> dict:
     return {
         "status": "ok",
         "version": "1.0.0",
+        "ai_mode": "mock" if settings.USE_MOCK_CLAUDE else "claude",
+        "claude_configured": bool(settings.ANTHROPIC_API_KEY),
+    }
+
+
+@app.get("/ready", tags=["meta"])
+async def readiness_check(db: AsyncSession = Depends(get_db)) -> dict:
+    """Readiness probe for dependencies required to serve real traffic."""
+    await db.execute(text("SELECT 1"))
+    upload_path = Path(settings.UPLOAD_DIR)
+    upload_ready = upload_path.exists() and upload_path.is_dir() and os.access(upload_path, os.W_OK)
+
+    return {
+        "status": "ready" if upload_ready else "not_ready",
+        "database": "ok",
+        "upload_dir": "ok" if upload_ready else "not_writable",
         "ai_mode": "mock" if settings.USE_MOCK_CLAUDE else "claude",
         "claude_configured": bool(settings.ANTHROPIC_API_KEY),
     }

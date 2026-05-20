@@ -193,6 +193,7 @@ export default function CourseDetailPage() {
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
+        let streamFailure: string | null = null;
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -223,12 +224,16 @@ export default function CourseDetailPage() {
                 }
               }
               if (data.type === 'error') {
-                setGenerateError(data.error || data.content || 'Generation failed');
+                streamFailure = data.error || data.content || 'Generation failed';
               }
             } catch {
               // ignore parse errors
             }
           }
+        }
+        if (streamFailure) {
+          await reader.cancel();
+          throw new Error(streamFailure);
         }
       }
     } catch (err: unknown) {
@@ -434,9 +439,12 @@ export default function CourseDetailPage() {
                   </Card>
 
                   {analysisError && (
-                    <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                    <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
                       <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                      {analysisError}
+                      <span className="flex-1">{analysisError}</span>
+                      <Button size="sm" variant="outline" onClick={handleStartAnalysis}>
+                        Try Again
+                      </Button>
                     </div>
                   )}
 

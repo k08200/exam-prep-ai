@@ -4,6 +4,7 @@ The ClaudeService is fully mocked — no real API calls.
 """
 import json
 import uuid
+import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -235,6 +236,51 @@ async def test_create_exam_mismatched_question_count_rolls_back(
     assert '"type": "complete"' not in resp.text
 
     result = await db_session.execute(select(Exam).where(Exam.title == "Mismatch Test"))
+    assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_create_exam_stream_timeout_rolls_back_draft(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    """A stalled exam generation stream emits a retryable timeout and removes the draft exam."""
+    from app.core.config import settings
+
+    course_id = test_course["id"]
+    await _create_analysis(db_session, uuid.UUID(course_id))
+    await db_session.commit()
+    monkeypatch.setattr(settings, "AI_STREAM_HEARTBEAT_SECONDS", 0.001)
+    monkeypatch.setattr(settings, "AI_STREAM_EVENT_TIMEOUT_SECONDS", 0.004)
+
+    async def stalled_generation(*args, **kwargs):
+        await asyncio.sleep(0.02)
+        yield {"type": "question", "question": MOCK_QUESTIONS[0], "tokens": 100}
+
+    with patch(
+        "app.routers.exams.claude_service.generate_exam_questions",
+        return_value=stalled_generation(),
+    ):
+        resp = await client.post(
+            f"/courses/{course_id}/exams",
+            json={"title": "Timeout Exam", "question_count": 1, "mode": "standard"},
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    events = [
+        json.loads(line[len("data: "):])
+        for line in resp.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert any(event["type"] == "heartbeat" for event in events)
+    assert events[-1]["type"] == "error"
+    assert events[-1]["retryable"] is True
+
+    result = await db_session.execute(select(Exam).where(Exam.title == "Timeout Exam"))
     assert result.scalar_one_or_none() is None
 
 
