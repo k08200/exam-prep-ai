@@ -168,6 +168,20 @@ async def _stream_exam_generation(
         yield _sse_event({"type": "error", "content": str(exc)})
         return
 
+    generated_count = question_number - 1
+    if generated_count != exam_create.question_count:
+        await db.rollback()
+        yield _sse_event(
+            {
+                "type": "error",
+                "content": (
+                    "Exam generation failed: expected "
+                    f"{exam_create.question_count} questions, got {generated_count}."
+                ),
+            }
+        )
+        return
+
     # Finalize exam record
     exam.status = EXAM_STATUS_ACTIVE
     exam.total_tokens_used = total_tokens
@@ -362,12 +376,36 @@ async def submit_exam(
             status_code=status.HTTP_409_CONFLICT,
             detail="Exam already submitted",
         )
+    if exam.status != EXAM_STATUS_ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Exam is not ready to submit",
+        )
 
     # Load all questions indexed by ID
     questions_result = await db.execute(
         select(ExamQuestion).where(ExamQuestion.exam_id == exam_id)
     )
     questions_by_id = {q.id: q for q in questions_result.scalars().all()}
+    if not questions_by_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Exam has no questions to grade",
+        )
+
+    submitted_question_ids = [answer.question_id for answer in submission.answers]
+    if len(submitted_question_ids) != len(set(submitted_question_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Duplicate answers for the same question are not allowed",
+        )
+
+    unknown_question_ids = set(submitted_question_ids) - set(questions_by_id)
+    if unknown_question_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Submitted answers include questions that do not belong to this exam",
+        )
 
     # Fetch existing professor analysis for grading context
     analysis_result = await db.execute(
@@ -385,7 +423,7 @@ async def submit_exam(
     # Build a map of submitted answers
     answers_map = {a.question_id: a.student_answer.strip() for a in submission.answers}
 
-    for question in questions_by_id.values():
+    for question in sorted(questions_by_id.values(), key=lambda q: q.question_number):
         student_answer = answers_map.get(question.id, "")
 
         # Grade the response using Claude

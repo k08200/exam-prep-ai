@@ -179,12 +179,12 @@ async def upload_materials(
 
     created_materials: list[Material] = []
     parse_tasks: list[tuple[uuid.UUID, str, str]] = []
+    saved_paths: list[Path] = []
     total_size = 0
 
     for upload_file in files:
         original_filename = upload_file.filename or "unknown"
         ext = Path(original_filename).suffix.lower()
-
         if ext not in settings.ALLOWED_EXTENSIONS:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -192,26 +192,35 @@ async def upload_materials(
                        f"Allowed: {sorted(settings.ALLOWED_EXTENSIONS)}",
             )
 
-        safe_filename = f"{uuid.uuid4()}{ext}"
-        file_path = upload_dir / safe_filename
+    try:
+        for upload_file in files:
+            original_filename = upload_file.filename or "unknown"
+            ext = Path(original_filename).suffix.lower()
+            safe_filename = f"{uuid.uuid4()}{ext}"
+            file_path = upload_dir / safe_filename
 
-        file_size = await _save_upload_file(upload_file, file_path)
+            file_size = await _save_upload_file(upload_file, file_path)
+            saved_paths.append(file_path)
 
-        file_type = EXTENSION_TO_TYPE.get(ext, "unknown")
-        material = Material(
-            course_id=course_id,
-            filename=safe_filename,
-            original_filename=original_filename,
-            file_type=file_type,
-            file_path=str(file_path),
-            file_size=file_size,
-        )
-        db.add(material)
-        await db.flush()
-        await db.refresh(material)
-        created_materials.append(material)
-        parse_tasks.append((material.id, str(file_path), file_type))
-        total_size += file_size
+            file_type = EXTENSION_TO_TYPE.get(ext, "unknown")
+            material = Material(
+                course_id=course_id,
+                filename=safe_filename,
+                original_filename=original_filename,
+                file_type=file_type,
+                file_path=str(file_path),
+                file_size=file_size,
+            )
+            db.add(material)
+            await db.flush()
+            await db.refresh(material)
+            created_materials.append(material)
+            parse_tasks.append((material.id, str(file_path), file_type))
+            total_size += file_size
+    except Exception:
+        for path in saved_paths:
+            path.unlink(missing_ok=True)
+        raise
 
     for material_id, file_path, file_type in parse_tasks:
         background_tasks.add_task(_parse_and_update, material_id, file_path, file_type)

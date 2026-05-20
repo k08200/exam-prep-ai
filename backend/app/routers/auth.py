@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +12,8 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
+from app.models.course import Course
+from app.models.material import Material
 from app.models.user import User
 from app.schemas.auth import Token, UserCreate, UserResponse, UserUpdate, PasswordChange
 
@@ -115,5 +119,13 @@ async def delete_me(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Permanently delete the current user and all their data."""
+    result = await db.execute(
+        select(Material.file_path)
+        .join(Course, Material.course_id == Course.id)
+        .where(Course.user_id == current_user.id)
+    )
+    for file_path in result.scalars().all():
+        Path(file_path).unlink(missing_ok=True)
+
     await db.delete(current_user)
     await db.commit()

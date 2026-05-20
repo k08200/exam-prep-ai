@@ -133,7 +133,7 @@ async def test_create_exam_generates_questions(
 
     with patch(
         "app.routers.exams.claude_service.generate_exam_questions",
-        return_value=_mock_question_generator(),
+        side_effect=lambda *args, **kwargs: _mock_question_generator(),
     ):
         resp = await client.post(
             f"/courses/{course_id}/exams",
@@ -209,6 +209,36 @@ async def test_exam_question_count_correct(
 
 
 @pytest.mark.asyncio
+async def test_create_exam_mismatched_question_count_rolls_back(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """If generation returns fewer questions than requested, no partial exam is kept."""
+    course_id = test_course["id"]
+    await _create_analysis(db_session, uuid.UUID(course_id))
+    await db_session.commit()
+
+    with patch(
+        "app.routers.exams.claude_service.generate_exam_questions",
+        return_value=_mock_question_generator(MOCK_QUESTIONS[:1]),
+    ):
+        resp = await client.post(
+            f"/courses/{course_id}/exams",
+            json={"title": "Mismatch Test", "question_count": 2, "mode": "standard"},
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    assert "Exam generation failed" in resp.text
+    assert '"type": "complete"' not in resp.text
+
+    result = await db_session.execute(select(Exam).where(Exam.title == "Mismatch Test"))
+    assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
 async def test_create_exam_without_analysis_fails(
     client: AsyncClient,
     auth_headers: dict,
@@ -249,7 +279,7 @@ async def _create_exam_with_questions(
 
     with patch(
         "app.routers.exams.claude_service.generate_exam_questions",
-        return_value=_mock_question_generator(),
+        side_effect=lambda *args, **kwargs: _mock_question_generator(),
     ):
         resp = await client.post(
             f"/courses/{course_id}/exams",
@@ -483,6 +513,92 @@ async def test_submit_exam_twice_returns_409(
         assert resp2.status_code == 409
 
 
+@pytest.mark.asyncio
+async def test_submit_duplicate_answers_returns_422(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """A payload cannot submit multiple answers for the same question."""
+    course_id = test_course["id"]
+    exam_id, q_ids = await _create_exam_with_questions(
+        client, auth_headers, course_id, db_session
+    )
+
+    resp = await client.post(
+        f"/exams/{exam_id}/submit",
+        json={
+            "answers": [
+                {"question_id": q_ids[0], "student_answer": "A"},
+                {"question_id": q_ids[0], "student_answer": "B"},
+            ]
+        },
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 422
+    assert "duplicate" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_submit_unknown_question_returns_422(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Answers must reference questions that belong to the submitted exam."""
+    course_id = test_course["id"]
+    exam_id, _ = await _create_exam_with_questions(
+        client, auth_headers, course_id, db_session
+    )
+
+    resp = await client.post(
+        f"/exams/{exam_id}/submit",
+        json={"answers": [{"question_id": str(uuid.uuid4()), "student_answer": "A"}]},
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 422
+    assert "do not belong" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_submit_draft_exam_returns_409(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Draft exams cannot be submitted before generation finishes successfully."""
+    from app.models.course import Course
+    from app.models.exam import EXAM_STATUS_DRAFT
+
+    course_id = uuid.UUID(test_course["id"])
+    course_result = await db_session.execute(select(Course).where(Course.id == course_id))
+    course = course_result.scalar_one()
+    exam = Exam(
+        course_id=course.id,
+        user_id=course.user_id,
+        title="Draft Exam",
+        mode="standard",
+        question_count=1,
+        status=EXAM_STATUS_DRAFT,
+    )
+    db_session.add(exam)
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/exams/{exam.id}/submit",
+        json={"answers": []},
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 409
+    assert "not ready" in resp.json()["detail"].lower()
+
+
 # ---------------------------------------------------------------------------
 # Heatmap / concept tracking tests
 # ---------------------------------------------------------------------------
@@ -592,7 +708,7 @@ async def test_list_exams_returns_user_exams(
 
     with patch(
         "app.routers.exams.claude_service.generate_exam_questions",
-        return_value=_mock_question_generator(),
+        side_effect=lambda *args, **kwargs: _mock_question_generator(),
     ):
         await client.post(
             f"/courses/{course_id}/exams",
@@ -628,7 +744,7 @@ async def test_list_all_exams_respects_limit(
 
     with patch(
         "app.routers.exams.claude_service.generate_exam_questions",
-        return_value=_mock_question_generator(),
+        side_effect=lambda *args, **kwargs: _mock_question_generator(),
     ):
         await client.post(
             f"/courses/{course_id}/exams",

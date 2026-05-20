@@ -176,6 +176,33 @@ async def test_upload_too_many_files_fails(
 
 
 @pytest.mark.asyncio
+async def test_upload_mixed_invalid_batch_does_not_save_files(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A multi-file batch with any invalid extension fails before saving files."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
+    course_id = test_course["id"]
+
+    resp = await client.post(
+        f"/courses/{course_id}/materials",
+        files=[
+            ("files", ("valid.pdf", _make_tiny_pdf_bytes(), "application/pdf")),
+            ("files", ("bad.exe", b"MZ", "application/octet-stream")),
+        ],
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 422
+    assert not [path for path in tmp_path.rglob("*") if path.is_file()]
+
+
+@pytest.mark.asyncio
 async def test_upload_to_wrong_course_fails(
     client: AsyncClient, auth_headers: dict
 ) -> None:
@@ -258,6 +285,39 @@ async def test_delete_material(
     list_resp = await client.get(f"/courses/{course_id}/materials", headers=auth_headers)
     ids = [m["id"] for m in list_resp.json()]
     assert material_id not in ids
+
+
+@pytest.mark.asyncio
+async def test_delete_account_removes_uploaded_files(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Deleting an account removes uploaded files as well as database rows."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
+    course_id = test_course["id"]
+
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("delete_with_account.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+            headers=auth_headers,
+        )
+    material_id = uuid.UUID(upload_resp.json()["materials"][0]["id"])
+    result = await db_session.execute(select(Material).where(Material.id == material_id))
+    material = result.scalar_one()
+    file_path = Path(material.file_path)
+    assert file_path.exists()
+
+    resp = await client.delete("/auth/me", headers=auth_headers)
+
+    assert resp.status_code == 204
+    assert not file_path.exists()
 
 
 @pytest.mark.asyncio

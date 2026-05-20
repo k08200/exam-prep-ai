@@ -1,6 +1,16 @@
 'use client';
 import { useState, useCallback, useRef, DragEvent, ChangeEvent } from 'react';
-import { Upload, X, FileText, AlertCircle, CheckCircle } from 'lucide-react';
+import {
+  Upload,
+  X,
+  FileText,
+  AlertCircle,
+  CheckCircle,
+  Image,
+  Presentation,
+  FileType,
+  Loader2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { formatFileSize } from '@/lib/utils';
 import { extractErrorMessage, materialsApi } from '@/lib/api';
@@ -35,11 +45,17 @@ interface FileUploadProps {
 
 function getFileIcon(file: File) {
   const name = file.name.toLowerCase();
-  if (name.endsWith('.pdf')) return '📄';
-  if (name.endsWith('.ppt') || name.endsWith('.pptx')) return '📊';
-  if (name.endsWith('.doc') || name.endsWith('.docx')) return '📝';
-  if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return '🖼️';
-  return '📁';
+  if (name.endsWith('.pdf')) return <FileText className="h-5 w-5 text-red-500" />;
+  if (name.endsWith('.ppt') || name.endsWith('.pptx')) {
+    return <Presentation className="h-5 w-5 text-orange-500" />;
+  }
+  if (name.endsWith('.doc') || name.endsWith('.docx')) {
+    return <FileType className="h-5 w-5 text-blue-500" />;
+  }
+  if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) {
+    return <Image className="h-5 w-5 text-green-500" />;
+  }
+  return <FileText className="h-5 w-5 text-gray-400" />;
 }
 
 export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
@@ -47,6 +63,14 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
   const [selectedFiles, setSelectedFiles] = useState<FileWithProgress[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearProgressInterval = useCallback(() => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+  }, []);
 
   const validateFile = (file: File): string | null => {
     if (file.size > MAX_FILE_SIZE) {
@@ -122,10 +146,11 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
     setSelectedFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
-  const validFiles = selectedFiles.filter((f) => f.status !== 'error');
+  const uploadableFiles = selectedFiles.filter((f) => f.status === 'pending');
 
   const handleUpload = async () => {
-    if (validFiles.length === 0) return;
+    if (uploadableFiles.length === 0) return;
+    clearProgressInterval();
     setIsUploading(true);
 
     // Mark all valid files as uploading
@@ -137,7 +162,7 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
 
     try {
       // Simulate progress updates
-      const progressInterval = setInterval(() => {
+      progressIntervalRef.current = setInterval(() => {
         setSelectedFiles((prev) =>
           prev.map((f) =>
             f.status === 'uploading' && f.progress < 80
@@ -149,10 +174,10 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
 
       await materialsApi.upload(
         courseId,
-        validFiles.map((f) => f.file)
+        uploadableFiles.map((f) => f.file)
       );
 
-      clearInterval(progressInterval);
+      clearProgressInterval();
 
       setSelectedFiles((prev) =>
         prev.map((f) =>
@@ -175,6 +200,7 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
       );
       onError(message);
     } finally {
+      clearProgressInterval();
       setIsUploading(false);
     }
   };
@@ -251,7 +277,7 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
                     : 'border-gray-200 bg-white'
                 }`}
               >
-                <span className="text-xl flex-shrink-0">{getFileIcon(fileItem.file)}</span>
+                <span className="flex-shrink-0">{getFileIcon(fileItem.file)}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-800 truncate">
                     {fileItem.file.name}
@@ -285,12 +311,7 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
                   ) : fileItem.status === 'error' ? (
                     <AlertCircle className="h-4 w-4 text-red-500" />
                   ) : fileItem.status === 'uploading' ? (
-                    <div className="h-4 w-4">
-                      <svg className="animate-spin h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                    </div>
+                    <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
                   ) : (
                     <button
                       onClick={(e) => {
@@ -321,10 +342,10 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
               size="sm"
               onClick={handleUpload}
               loading={isUploading}
-              disabled={validFiles.length === 0 || isUploading}
+              disabled={uploadableFiles.length === 0 || isUploading}
             >
               <FileText className="h-4 w-4" />
-              Upload {validFiles.length > 0 ? `${validFiles.length} File${validFiles.length > 1 ? 's' : ''}` : ''}
+              Upload {uploadableFiles.length > 0 ? `${uploadableFiles.length} File${uploadableFiles.length > 1 ? 's' : ''}` : ''}
             </Button>
           </div>
         </div>
