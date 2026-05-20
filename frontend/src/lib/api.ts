@@ -126,6 +126,7 @@ export const examsApi = {
   list: (courseId: string) => api.get(`/courses/${courseId}/exams`),
   get: (examId: string) => api.get(`/exams/${examId}`),
   result: (examId: string) => api.get(`/exams/${examId}/result`),
+  delete: (examId: string) => api.delete(`/exams/${examId}`),
   submit: (
     examId: string,
     answers: Array<{ question_id: string; student_answer: string }>

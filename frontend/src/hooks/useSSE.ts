@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Cookies from 'js-cookie';
 import { extractErrorMessage } from '@/lib/api';
 
@@ -30,6 +30,7 @@ export function useSSE() {
         onError?: (error: string) => void;
       }
     ) => {
+      controllerRef.current?.abort();
       const token = Cookies.get('access_token');
       controllerRef.current = new AbortController();
       setIsStreaming(true);
@@ -102,7 +103,14 @@ export function useSSE() {
 
   const stopStream = useCallback(() => {
     controllerRef.current?.abort();
+    controllerRef.current = null;
     setIsStreaming(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort();
+    };
   }, []);
 
   return { isStreaming, tokensUsed, startStream, stopStream };

@@ -128,6 +128,7 @@ Note: The `thinking: {type: "adaptive"}` specification uses Claude's extended th
 - `GET /courses/{id}/exams` - List course exams
 - `GET /exams` - List recent exams across courses
 - `GET /exams/{id}` - Get exam with questions
+- `DELETE /exams/{id}` - Delete an exam and its answers
 - `POST /exams/{id}/submit` - Submit answers, get results
 - `GET /exams/{id}/result` - Re-open saved grading results
 - `GET /courses/{id}/heatmap` - Get weakness heatmap

@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { BookOpen, Clock, CheckCircle, Zap } from 'lucide-react';
+import { BookOpen, Clock, CheckCircle, Zap, Trash2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TokenCounter } from '@/components/ui/TokenCounter';
@@ -9,6 +9,7 @@ import type { Exam } from '@/types';
 
 interface ExamCardProps {
   exam: Exam;
+  onDelete?: (exam: Exam) => void;
 }
 
 const STATUS_CONFIG = {
@@ -17,7 +18,7 @@ const STATUS_CONFIG = {
   completed: { label: 'Completed', className: 'bg-green-100 text-green-700' },
 };
 
-export function ExamCard({ exam }: ExamCardProps) {
+export function ExamCard({ exam, onDelete }: ExamCardProps) {
   const router = useRouter();
   const statusCfg = STATUS_CONFIG[exam.status];
   const scorePercent = exam.score !== null ? Math.round(exam.score) : null;
@@ -100,6 +101,16 @@ export function ExamCard({ exam }: ExamCardProps) {
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
           <TokenCounter tokens={exam.total_tokens_used} label="AI tokens" animated={false} />
           <div className="flex gap-2">
+            {onDelete && (
+              <button
+                onClick={() => onDelete(exam)}
+                className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                aria-label="Delete exam"
+                title="Delete exam"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
             {exam.status === 'active' && (
               <Button
                 size="sm"

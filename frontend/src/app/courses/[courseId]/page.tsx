@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -66,8 +66,17 @@ export default function CourseDetailPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateText, setGenerateText] = useState('');
   const [generateTokens, setGenerateTokens] = useState(0);
+  const [examToDelete, setExamToDelete] = useState<Exam | null>(null);
+  const [deleteExamError, setDeleteExamError] = useState<string | null>(null);
+  const [isDeletingExam, setIsDeletingExam] = useState(false);
+  const generateControllerRef = useRef<AbortController | null>(null);
 
-  const { isStreaming: isAnalyzing, tokensUsed: analysisTokens, startStream } = useSSE();
+  const {
+    isStreaming: isAnalyzing,
+    tokensUsed: analysisTokens,
+    startStream,
+    stopStream,
+  } = useSSE();
 
   // Fetch course
   const { data: course, isLoading: courseLoading } = useQuery<Course>({
@@ -147,6 +156,11 @@ export default function CourseDetailPage() {
     });
   };
 
+  const handleCancelAnalysis = () => {
+    stopStream();
+    setAnalysisError('Analysis cancelled.');
+  };
+
   const handleGenerateExam = async () => {
     if (!generateOptions.title.trim()) {
       setGenerateError('Please enter an exam title.');
@@ -158,6 +172,7 @@ export default function CourseDetailPage() {
     setIsGenerating(true);
 
     const token = Cookies.get('access_token');
+    generateControllerRef.current = new AbortController();
 
     try {
       const response = await fetch(examsApi.getStreamUrl(courseId), {
@@ -167,6 +182,7 @@ export default function CourseDetailPage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(generateOptions),
+        signal: generateControllerRef.current.signal,
       });
 
       if (!response.ok) {
@@ -237,9 +253,34 @@ export default function CourseDetailPage() {
         }
       }
     } catch (err: unknown) {
-      setGenerateError(extractErrorMessage(err, 'Failed to generate exam.'));
+      if (err instanceof Error && err.name === 'AbortError') {
+        setGenerateError('Exam generation cancelled.');
+      } else {
+        setGenerateError(extractErrorMessage(err, 'Failed to generate exam.'));
+      }
     } finally {
+      generateControllerRef.current = null;
       setIsGenerating(false);
+    }
+  };
+
+  const handleCancelGenerateExam = () => {
+    generateControllerRef.current?.abort();
+  };
+
+  const handleDeleteExam = async () => {
+    if (!examToDelete) return;
+    setIsDeletingExam(true);
+    setDeleteExamError(null);
+    try {
+      await examsApi.delete(examToDelete.id);
+      queryClient.invalidateQueries({ queryKey: ['exams', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['recentExams'] });
+      setExamToDelete(null);
+    } catch (err: unknown) {
+      setDeleteExamError(extractErrorMessage(err, 'Failed to delete exam. Please try again.'));
+    } finally {
+      setIsDeletingExam(false);
     }
   };
 
@@ -427,6 +468,14 @@ export default function CourseDetailPage() {
                         <span className="text-xs text-gray-500">
                           Extended thinking in progress…
                         </span>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="ml-auto"
+                          onClick={handleCancelAnalysis}
+                        >
+                          Cancel
+                        </Button>
                       </div>
                       <div className="max-h-96 overflow-y-auto">
                         <StreamingText
@@ -552,7 +601,14 @@ export default function CourseDetailPage() {
           ) : (
             <div className="space-y-3">
               {exams.map((exam) => (
-                <ExamCard key={exam.id} exam={exam} />
+                <ExamCard
+                  key={exam.id}
+                  exam={exam}
+                  onDelete={(selectedExam) => {
+                    setExamToDelete(selectedExam);
+                    setDeleteExamError(null);
+                  }}
+                />
               ))}
             </div>
           )}
@@ -731,8 +787,54 @@ export default function CourseDetailPage() {
                 {generateError}
               </div>
             )}
+            <div className="flex justify-end">
+              <Button variant="secondary" size="sm" onClick={handleCancelGenerateExam}>
+                Cancel Generation
+              </Button>
+            </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={!!examToDelete}
+        onClose={() => {
+          if (!isDeletingExam) {
+            setExamToDelete(null);
+            setDeleteExamError(null);
+          }
+        }}
+        title="Delete Exam"
+        description="This removes the exam, questions, and submitted answers."
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Delete <span className="font-medium text-gray-900">{examToDelete?.title}</span>?
+          </p>
+          {deleteExamError && (
+            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              {deleteExamError}
+            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={isDeletingExam}
+              onClick={() => {
+                setExamToDelete(null);
+                setDeleteExamError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" size="sm" loading={isDeletingExam} onClick={handleDeleteExam}>
+              Delete Exam
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

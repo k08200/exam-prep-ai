@@ -435,6 +435,56 @@ async def test_get_exam_result_before_submit_returns_409(
 
 
 @pytest.mark.asyncio
+async def test_delete_exam_removes_exam(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """DELETE /exams/{id} removes an owned exam."""
+    course_id = test_course["id"]
+    exam_id, _ = await _create_exam_with_questions(
+        client, auth_headers, course_id, db_session
+    )
+
+    resp = await client.delete(f"/exams/{exam_id}", headers=auth_headers)
+
+    assert resp.status_code == 204
+    get_resp = await client.get(f"/exams/{exam_id}", headers=auth_headers)
+    assert get_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_other_user_exam_returns_403(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """DELETE /exams/{id} cannot delete another user's exam."""
+    await client.post(
+        "/auth/register",
+        json={"email": "exam-owner@example.com", "password": "password123"},
+    )
+    login_resp = await client.post(
+        "/auth/login",
+        data={"username": "exam-owner@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+    course_resp = await client.post(
+        "/courses",
+        json={"name": "Owner Exam Course"},
+        headers=owner_headers,
+    )
+    exam_id, _ = await _create_exam_with_questions(
+        client, owner_headers, course_resp.json()["id"], db_session
+    )
+
+    resp = await client.delete(f"/exams/{exam_id}", headers=auth_headers)
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_submit_correct_answer(
     client: AsyncClient,
     auth_headers: dict,

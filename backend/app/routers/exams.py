@@ -368,6 +368,23 @@ async def get_exam_result(
     )
 
 
+@router.delete("/exams/{exam_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_exam(
+    exam_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete one exam and its associated questions/responses."""
+    result = await db.execute(select(Exam).where(Exam.id == exam_id))
+    exam = result.scalar_one_or_none()
+    if exam is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exam not found")
+    if exam.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    await db.delete(exam)
+
+
 @router.post("/exams/{exam_id}/submit", response_model=ExamResult)
 async def submit_exam(
     exam_id: uuid.UUID,
