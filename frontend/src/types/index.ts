@@ -15,6 +15,9 @@ export interface Course {
   subject: string | null;
   created_at: string;
   material_count: number;
+  completed_material_count: number;
+  processing_material_count: number;
+  failed_material_count: number;
   has_analysis: boolean;
 }
 

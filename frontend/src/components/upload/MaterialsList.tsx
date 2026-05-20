@@ -88,6 +88,8 @@ export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
       try {
         await materialsApi.delete(courseId, materialToDelete.id);
         queryClient.invalidateQueries({ queryKey: ['materials', courseId] });
+        queryClient.invalidateQueries({ queryKey: ['course', courseId] });
+        queryClient.invalidateQueries({ queryKey: ['analysis', courseId] });
         queryClient.invalidateQueries({ queryKey: ['courses'] });
         setMaterialToDelete(null);
       } catch (err: unknown) {
@@ -106,6 +108,9 @@ export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
       try {
         await materialsApi.retry(courseId, material.id);
         queryClient.invalidateQueries({ queryKey: ['materials', courseId] });
+        queryClient.invalidateQueries({ queryKey: ['course', courseId] });
+        queryClient.invalidateQueries({ queryKey: ['analysis', courseId] });
+        queryClient.invalidateQueries({ queryKey: ['courses'] });
       } catch (err: unknown) {
         setRetryError(extractErrorMessage(err, 'Failed to retry material processing.'));
       } finally {

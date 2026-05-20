@@ -102,6 +102,66 @@ async def test_get_course_by_id(client: AsyncClient, auth_headers: dict) -> None
 
 
 @pytest.mark.asyncio
+async def test_get_course_includes_material_status_counts(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session,
+) -> None:
+    """Course responses expose material counts by processing state."""
+    import uuid
+    from app.models.material import (
+        Material,
+        PROCESSING_STATUS_COMPLETED,
+        PROCESSING_STATUS_FAILED,
+        PROCESSING_STATUS_PENDING,
+    )
+
+    course_id = uuid.UUID(test_course["id"])
+    db_session.add_all(
+        [
+            Material(
+                course_id=course_id,
+                filename="ready.pdf",
+                original_filename="ready.pdf",
+                file_type="pdf",
+                file_path="/tmp/ready.pdf",
+                file_size=100,
+                processing_status=PROCESSING_STATUS_COMPLETED,
+            ),
+            Material(
+                course_id=course_id,
+                filename="pending.pdf",
+                original_filename="pending.pdf",
+                file_type="pdf",
+                file_path="/tmp/pending.pdf",
+                file_size=100,
+                processing_status=PROCESSING_STATUS_PENDING,
+            ),
+            Material(
+                course_id=course_id,
+                filename="failed.pdf",
+                original_filename="failed.pdf",
+                file_type="pdf",
+                file_path="/tmp/failed.pdf",
+                file_size=100,
+                processing_status=PROCESSING_STATUS_FAILED,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    resp = await client.get(f"/courses/{course_id}", headers=auth_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["material_count"] == 3
+    assert data["completed_material_count"] == 1
+    assert data["processing_material_count"] == 1
+    assert data["failed_material_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_get_course_not_found_returns_404(client: AsyncClient, auth_headers: dict) -> None:
     """GET /courses/{id} with a non-existent UUID returns 404."""
     import uuid

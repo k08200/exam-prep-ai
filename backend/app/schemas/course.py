@@ -27,6 +27,9 @@ class CourseResponse(BaseModel):
     subject: str | None
     created_at: datetime
     material_count: int = 0
+    completed_material_count: int = 0
+    processing_material_count: int = 0
+    failed_material_count: int = 0
     has_analysis: bool = False
 
     model_config = {"from_attributes": True}

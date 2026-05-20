@@ -9,8 +9,14 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.course import Course
-from app.models.material import Material
 from app.models.analysis import ProfessorAnalysis
+from app.models.material import (
+    Material,
+    PROCESSING_STATUS_COMPLETED,
+    PROCESSING_STATUS_FAILED,
+    PROCESSING_STATUS_PENDING,
+    PROCESSING_STATUS_PROCESSING,
+)
 from app.models.user import User
 from app.schemas.course import CourseCreate, CourseResponse, CourseUpdate
 
@@ -19,10 +25,19 @@ router = APIRouter(prefix="/courses", tags=["courses"])
 
 async def _build_course_response(course: Course, db: AsyncSession) -> CourseResponse:
     """Helper to attach computed fields: material_count and has_analysis."""
-    material_count_result = await db.execute(
-        select(func.count()).where(Material.course_id == course.id)
+    material_status_result = await db.execute(
+        select(Material.processing_status, func.count())
+        .where(Material.course_id == course.id)
+        .group_by(Material.processing_status)
     )
-    material_count = material_count_result.scalar_one()
+    material_counts = dict(material_status_result.all())
+    completed_material_count = material_counts.get(PROCESSING_STATUS_COMPLETED, 0)
+    processing_material_count = (
+        material_counts.get(PROCESSING_STATUS_PENDING, 0)
+        + material_counts.get(PROCESSING_STATUS_PROCESSING, 0)
+    )
+    failed_material_count = material_counts.get(PROCESSING_STATUS_FAILED, 0)
+    material_count = sum(material_counts.values())
 
     analysis_result = await db.execute(
         select(ProfessorAnalysis.id).where(ProfessorAnalysis.course_id == course.id)
@@ -38,6 +53,9 @@ async def _build_course_response(course: Course, db: AsyncSession) -> CourseResp
         "subject": course.subject,
         "created_at": course.created_at,
         "material_count": material_count,
+        "completed_material_count": completed_material_count,
+        "processing_material_count": processing_material_count,
+        "failed_material_count": failed_material_count,
         "has_analysis": has_analysis,
     }
     return CourseResponse(**data)

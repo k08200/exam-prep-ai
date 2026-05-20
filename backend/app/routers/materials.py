@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.course import Course
+from app.models.analysis import ProfessorAnalysis
 from app.models.material import (
     Material,
     PROCESSING_STATUS_COMPLETED,
@@ -76,6 +77,16 @@ async def _assert_course_ownership(
     if course.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return course
+
+
+async def _invalidate_course_analysis(course_id: uuid.UUID, db: AsyncSession) -> None:
+    """Remove saved analysis when the material set changes."""
+    result = await db.execute(
+        select(ProfessorAnalysis).where(ProfessorAnalysis.course_id == course_id)
+    )
+    analysis = result.scalar_one_or_none()
+    if analysis is not None:
+        await db.delete(analysis)
 
 
 def _validate_upload_content_type(upload_file: UploadFile, ext: str) -> None:
@@ -260,6 +271,8 @@ async def upload_materials(
     for material_id, file_path, file_type in parse_tasks:
         background_tasks.add_task(_parse_and_update, material_id, file_path, file_type)
 
+    await _invalidate_course_analysis(course_id, db)
+
     responses = [MaterialResponse.model_validate(m) for m in created_materials]
     return MaterialUploadResponse(materials=responses, total_size=total_size)
 
@@ -326,6 +339,7 @@ async def retry_material_processing(
     material.processing_error = None
     material.extracted_text = None
     material.page_count = None
+    await _invalidate_course_analysis(course_id, db)
     await db.flush()
     await db.refresh(material)
 
@@ -364,4 +378,5 @@ async def delete_material(
     if file_path.exists():
         file_path.unlink(missing_ok=True)
 
+    await _invalidate_course_analysis(course_id, db)
     await db.delete(material)

@@ -130,6 +130,11 @@ export default function CourseDetailPage() {
   });
 
   const handleStartAnalysis = async () => {
+    if (!course || course.completed_material_count === 0) {
+      setAnalysisError('Wait for at least one material to finish processing before analysis.');
+      return;
+    }
+
     setAnalysisText('');
     setAnalysisError(null);
     setAnalysisComplete(false);
@@ -307,6 +312,10 @@ export default function CourseDetailPage() {
     );
   }
 
+  const completedMaterialCount = course.completed_material_count;
+  const processingMaterialCount = course.processing_material_count;
+  const failedMaterialCount = course.failed_material_count;
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Back + Header */}
@@ -386,6 +395,8 @@ export default function CourseDetailPage() {
                   onSuccess={() => {
                     queryClient.invalidateQueries({ queryKey: ['materials', courseId] });
                     queryClient.invalidateQueries({ queryKey: ['course', courseId] });
+                    queryClient.invalidateQueries({ queryKey: ['analysis', courseId] });
+                    queryClient.invalidateQueries({ queryKey: ['courses'] });
                     setUploadError(null);
                     setShowUpload(false);
                   }}
@@ -423,7 +434,7 @@ export default function CourseDetailPage() {
                     Professor Pattern Analysis
                   </h2>
                   <p className="text-sm text-gray-500 mt-0.5">
-                    Based on {course.material_count} uploaded material{course.material_count !== 1 ? 's' : ''}
+                    Based on {completedMaterialCount} completed material{completedMaterialCount !== 1 ? 's' : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -525,10 +536,16 @@ export default function CourseDetailPage() {
                     </div>
                   )}
 
-                  {course.material_count === 0 ? (
+                  {completedMaterialCount === 0 ? (
                     <div className="space-y-3">
                       <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 inline-block">
-                        Upload at least one material before analyzing
+                        {course.material_count === 0
+                          ? 'Upload at least one material before analyzing'
+                          : processingMaterialCount > 0
+                            ? 'Wait for at least one material to finish processing'
+                            : failedMaterialCount > 0
+                              ? 'Retry a failed material or upload another file before analyzing'
+                              : 'Upload a completed material before analyzing'}
                       </p>
                       <div>
                         <Button
@@ -536,7 +553,7 @@ export default function CourseDetailPage() {
                           onClick={() => setActiveTab('materials')}
                         >
                           <Upload className="h-4 w-4" />
-                          Upload Materials First
+                          {course.material_count === 0 ? 'Upload Materials First' : 'Review Materials'}
                         </Button>
                       </div>
                     </div>

@@ -15,6 +15,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.analysis import ProfessorAnalysis
 from app.models.material import (
     Material,
     PROCESSING_STATUS_FAILED,
@@ -68,6 +69,41 @@ def _make_tiny_docx_bytes() -> bytes:
     return buf.getvalue()
 
 
+async def _create_analysis(db: AsyncSession, course_id: uuid.UUID) -> ProfessorAnalysis:
+    """Persist a saved analysis for material invalidation tests."""
+    analysis = ProfessorAnalysis(
+        course_id=course_id,
+        top_concepts=[
+            {
+                "concept": "Gradient Descent",
+                "frequency": 10,
+                "importance_score": 0.9,
+                "description": "Optimization concept",
+            }
+        ],
+        question_types={
+            "multiple_choice": 40.0,
+            "essay": 30.0,
+            "calculation": 20.0,
+            "true_false": 10.0,
+        },
+        topic_distribution={"Optimization": 100.0},
+        professor_terms=[],
+        exam_patterns={},
+        raw_analysis="saved analysis",
+    )
+    db.add(analysis)
+    await db.flush()
+    return analysis
+
+
+async def _analysis_exists(db: AsyncSession, course_id: uuid.UUID) -> bool:
+    result = await db.execute(
+        select(ProfessorAnalysis.id).where(ProfessorAnalysis.course_id == course_id)
+    )
+    return result.scalar_one_or_none() is not None
+
+
 # ---------------------------------------------------------------------------
 # Upload tests
 # ---------------------------------------------------------------------------
@@ -97,6 +133,29 @@ async def test_upload_pdf_success(
     assert mat["processing_status"] == "pending"
     assert mat["processing_error"] is None
     assert data["total_size"] == len(pdf_bytes)
+
+
+@pytest.mark.asyncio
+async def test_upload_invalidates_existing_analysis(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Uploading new material removes saved analysis so the course can be re-analysed."""
+    course_id = uuid.UUID(test_course["id"])
+    await _create_analysis(db_session, course_id)
+    assert await _analysis_exists(db_session, course_id)
+
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("new_lecture.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 201
+    assert not await _analysis_exists(db_session, course_id)
 
 
 @pytest.mark.asyncio
@@ -303,6 +362,35 @@ async def test_delete_material(
 
 
 @pytest.mark.asyncio
+async def test_delete_material_invalidates_existing_analysis(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Deleting material removes saved analysis because the source set changed."""
+    course_id = uuid.UUID(test_course["id"])
+
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("delete_stales_analysis.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+            headers=auth_headers,
+        )
+    material_id = upload_resp.json()["materials"][0]["id"]
+    await _create_analysis(db_session, course_id)
+    assert await _analysis_exists(db_session, course_id)
+
+    del_resp = await client.delete(
+        f"/courses/{course_id}/materials/{material_id}",
+        headers=auth_headers,
+    )
+
+    assert del_resp.status_code == 204
+    assert not await _analysis_exists(db_session, course_id)
+
+
+@pytest.mark.asyncio
 async def test_delete_account_removes_uploaded_files(
     client: AsyncClient,
     auth_headers: dict,
@@ -411,6 +499,41 @@ async def test_retry_failed_material_resets_status(
     assert data["processing_status"] == PROCESSING_STATUS_PENDING
     assert data["processing_error"] is None
     assert parser_mock.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_material_invalidates_existing_analysis(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Retrying a failed material removes saved analysis before reparsing."""
+    course_id = uuid.UUID(test_course["id"])
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("retry_stales_analysis.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+            headers=auth_headers,
+        )
+    material_id = upload_resp.json()["materials"][0]["id"]
+
+    result = await db_session.execute(select(Material).where(Material.id == uuid.UUID(material_id)))
+    material = result.scalar_one()
+    material.processing_status = PROCESSING_STATUS_FAILED
+    material.processing_error = "previous failure"
+    await _create_analysis(db_session, course_id)
+    await db_session.flush()
+    assert await _analysis_exists(db_session, course_id)
+
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        retry_resp = await client.post(
+            f"/courses/{course_id}/materials/{material_id}/retry",
+            headers=auth_headers,
+        )
+
+    assert retry_resp.status_code == 200
+    assert not await _analysis_exists(db_session, course_id)
 
 
 @pytest.mark.asyncio
