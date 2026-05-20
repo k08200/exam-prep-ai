@@ -360,6 +360,44 @@ def test_cors_origins_are_parsed_from_comma_separated_string(monkeypatch) -> Non
     ]
 
 
+def test_validate_runtime_settings_allows_development_defaults(monkeypatch) -> None:
+    """Development mode permits mock/local defaults."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development")
+
+    settings.validate_runtime_settings()
+
+
+def test_validate_runtime_settings_rejects_production_mock_mode(monkeypatch) -> None:
+    """Production mode fails fast if mock Claude is enabled."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "SECRET_KEY", "x" * 40)
+    monkeypatch.setattr(settings, "USE_MOCK_CLAUDE", True)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "AUTO_CREATE_TABLES", False)
+    monkeypatch.setattr(settings, "CORS_ORIGINS", "https://app.example.com")
+
+    with pytest.raises(RuntimeError, match="USE_MOCK_CLAUDE"):
+        settings.validate_runtime_settings()
+
+
+def test_validate_runtime_settings_accepts_safe_production(monkeypatch) -> None:
+    """Production mode accepts explicit secret, Claude key, migrations, and CORS."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "SECRET_KEY", "x" * 40)
+    monkeypatch.setattr(settings, "USE_MOCK_CLAUDE", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "AUTO_CREATE_TABLES", False)
+    monkeypatch.setattr(settings, "CORS_ORIGINS", "https://app.example.com")
+
+    settings.validate_runtime_settings()
+
+
 @pytest.mark.asyncio
 async def test_health_endpoint(client) -> None:
     """GET /health returns liveness and AI mode metadata."""

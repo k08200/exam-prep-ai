@@ -1,4 +1,3 @@
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -13,6 +12,8 @@ from app.routers import auth, courses, materials, analysis, exams
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle management."""
+    settings.validate_runtime_settings()
+
     # Create upload directory
     upload_path = Path(settings.UPLOAD_DIR)
     upload_path.mkdir(parents=True, exist_ok=True)

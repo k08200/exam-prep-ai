@@ -182,6 +182,7 @@ npm run dev
 
 | Variable | Description | Required |
 |----------|-------------|----------|
+| ENVIRONMENT | Runtime mode (`development` or `production`) | No (default: development) |
 | ANTHROPIC_API_KEY | Your Anthropic API key | Yes |
 | DATABASE_URL | PostgreSQL connection string | Yes |
 | SECRET_KEY | JWT secret (32+ chars) | Yes |

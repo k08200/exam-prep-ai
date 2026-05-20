@@ -3,6 +3,7 @@
 ## Runtime
 
 - Run PostgreSQL 16 or compatible.
+- Set `ENVIRONMENT=production` so the backend fails fast on unsafe runtime settings.
 - Set `DATABASE_URL` to an async SQLAlchemy URL, for example `postgresql+asyncpg://USER:PASSWORD@HOST:5432/DB`.
 - Set a production `SECRET_KEY` with at least 32 random characters.
 - Set `RUN_MIGRATIONS=true` unless the platform has a separate migration release step.

@@ -5,6 +5,8 @@ from typing import Set
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env")
 
+    ENVIRONMENT: str = "development"
+
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/exam_prep_ai"
 
@@ -61,6 +63,27 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         """Return configured CORS origins from a comma-separated env value."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.lower() in {"prod", "production"}
+
+    def validate_runtime_settings(self) -> None:
+        """Fail fast on unsafe production configuration."""
+        if not self.is_production:
+            return
+
+        default_secret = "change-this-secret-key-in-production-use-openssl-rand-hex-32"
+        if self.SECRET_KEY == default_secret or len(self.SECRET_KEY) < 32:
+            raise RuntimeError("Production SECRET_KEY must be at least 32 random characters.")
+        if self.USE_MOCK_CLAUDE:
+            raise RuntimeError("Production must set USE_MOCK_CLAUDE=false.")
+        if not self.ANTHROPIC_API_KEY:
+            raise RuntimeError("Production Claude mode requires ANTHROPIC_API_KEY.")
+        if self.AUTO_CREATE_TABLES:
+            raise RuntimeError("Production must set AUTO_CREATE_TABLES=false and use migrations.")
+        if not self.cors_origins:
+            raise RuntimeError("Production CORS_ORIGINS must include the frontend origin.")
 
 
 settings = Settings()
