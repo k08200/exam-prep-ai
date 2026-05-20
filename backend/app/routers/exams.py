@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -187,7 +187,7 @@ async def _stream_exam_generation(
 async def list_all_exams(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100),
 ) -> list[ExamResponse]:
     """Return the most recent exams across all courses for the current user."""
     result = await db.execute(

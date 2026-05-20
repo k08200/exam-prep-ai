@@ -612,3 +612,45 @@ async def test_list_exams_returns_user_exams(
     titles = [e["title"] for e in exams]
     assert "Exam 1" in titles
     assert "Exam 2" in titles
+
+
+@pytest.mark.asyncio
+async def test_list_all_exams_respects_limit(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """GET /exams returns recent exams across courses and applies the limit."""
+    course_id = test_course["id"]
+    await _create_analysis(db_session, uuid.UUID(course_id))
+    await db_session.commit()
+
+    with patch(
+        "app.routers.exams.claude_service.generate_exam_questions",
+        return_value=_mock_question_generator(),
+    ):
+        await client.post(
+            f"/courses/{course_id}/exams",
+            json={"title": "Recent 1", "question_count": 2, "mode": "standard"},
+            headers=auth_headers,
+        )
+        await client.post(
+            f"/courses/{course_id}/exams",
+            json={"title": "Recent 2", "question_count": 2, "mode": "standard"},
+            headers=auth_headers,
+        )
+
+    resp = await client.get("/exams?limit=1", headers=auth_headers)
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_list_all_exams_rejects_invalid_limit(
+    client: AsyncClient,
+    auth_headers: dict,
+) -> None:
+    """GET /exams validates the limit query parameter."""
+    resp = await client.get("/exams?limit=0", headers=auth_headers)
+    assert resp.status_code == 422

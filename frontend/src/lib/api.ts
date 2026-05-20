@@ -40,8 +40,15 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      Cookies.remove('access_token');
-      window.location.href = '/auth/login';
+      const requestUrl = error.config?.url || '';
+      const shouldHandleLocally =
+        requestUrl.includes('/auth/login') ||
+        requestUrl.includes('/auth/me/password');
+
+      if (!shouldHandleLocally && typeof window !== 'undefined') {
+        Cookies.remove('access_token');
+        window.location.href = '/auth/login';
+      }
     }
     return Promise.reject(error);
   }
