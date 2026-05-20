@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -31,6 +32,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/js-cookie": "^3.0.6",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.17",

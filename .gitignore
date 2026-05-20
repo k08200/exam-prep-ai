@@ -18,6 +18,8 @@ htmlcov/
 node_modules/
 .next/
 frontend/next-env.d.ts
+frontend/playwright-report/
+frontend/test-results/
 out/
 .npm
 *.tsbuildinfo

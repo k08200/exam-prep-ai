@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     # File uploads
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
+    MAX_UPLOAD_FILES: int = 10
     ALLOWED_EXTENSIONS: Set[str] = {
         ".pdf",
         ".pptx",
@@ -35,6 +36,18 @@ class Settings(BaseSettings):
     USE_MOCK_CLAUDE: bool = False
     AUTO_CREATE_TABLES: bool = True
     RUN_MIGRATIONS: bool = True
+    CORS_ORIGINS: str = (
+        "http://localhost:3000,"
+        "http://127.0.0.1:3000,"
+        "http://localhost:3003,"
+        "http://127.0.0.1:3003,"
+        "http://localhost:5173,"
+        "http://127.0.0.1:5173,"
+        "http://localhost:8080,"
+        "http://127.0.0.1:8080,"
+        "tauri://localhost,"
+        "http://tauri.localhost"
+    )
 
     # Claude model config
     CLAUDE_MODEL: str = "claude-opus-4-1-20250805"
@@ -43,6 +56,11 @@ class Settings(BaseSettings):
     # We use {"type": "enabled", "budget_tokens": N} for explicit control.
     THINKING_BUDGET_ANALYSIS: int = 30000  # for professor style analysis (deep)
     THINKING_BUDGET_GENERATION: int = 10000  # for exam question generation
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Return configured CORS origins from a comma-separated env value."""
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
 
 settings = Settings()

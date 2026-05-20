@@ -17,6 +17,7 @@ const ACCEPTED_TYPES = [
 
 const ACCEPTED_EXTENSIONS = ['.pdf', '.ppt', '.pptx', '.docx', '.doc', '.png', '.jpg', '.jpeg'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_UPLOAD_FILES = 10;
 
 interface FileWithProgress {
   file: File;
@@ -62,19 +63,29 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
   };
 
   const addFiles = useCallback((newFiles: File[]) => {
-    const withProgress: FileWithProgress[] = newFiles.map((file) => {
-      const error = validateFile(file);
-      return {
-        file,
-        id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
-        progress: 0,
-        status: error ? 'error' : 'pending',
-        error: error ?? undefined,
-      };
-    });
     setSelectedFiles((prev) => {
-      const existingNames = new Set(prev.map((f) => f.file.name));
-      const unique = withProgress.filter((f) => !existingNames.has(f.file.name));
+      const existingKeys = new Set(prev.map((f) => `${f.file.name}-${f.file.size}`));
+      let validCount = prev.filter((f) => f.status !== 'error').length;
+      const unique: FileWithProgress[] = [];
+
+      for (const file of newFiles) {
+        const key = `${file.name}-${file.size}`;
+        if (existingKeys.has(key)) continue;
+
+        let error = validateFile(file);
+        if (!error && validCount >= MAX_UPLOAD_FILES) {
+          error = `Upload at most ${MAX_UPLOAD_FILES} files at a time`;
+        }
+        if (!error) validCount += 1;
+        existingKeys.add(key);
+        unique.push({
+          file,
+          id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
+          progress: 0,
+          status: error ? 'error' : 'pending',
+          error: error ?? undefined,
+        });
+      }
       return [...prev, ...unique];
     });
   }, []);
@@ -205,7 +216,8 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
               {isDragging ? 'Drop files here' : 'Drag & drop files or click to browse'}
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              PDF, PPT, PPTX, DOCX, DOC, PNG, JPG up to 50MB each
+              PDF, PPT, PPTX, DOCX, DOC, PNG, JPG. Up to {MAX_UPLOAD_FILES} files,
+              50MB each
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-1.5">

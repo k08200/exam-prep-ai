@@ -348,6 +348,18 @@ def test_default_claude_model_is_valid_api_id() -> None:
     assert settings.CLAUDE_MODEL == "claude-opus-4-1-20250805"
 
 
+def test_cors_origins_are_parsed_from_comma_separated_string(monkeypatch) -> None:
+    """Settings exposes CORS origins as a trimmed list for FastAPI middleware."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "CORS_ORIGINS", "https://app.example.com, http://localhost:3000 ")
+
+    assert settings.cors_origins == [
+        "https://app.example.com",
+        "http://localhost:3000",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_health_endpoint(client) -> None:
     """GET /health returns liveness and AI mode metadata."""

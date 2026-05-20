@@ -148,6 +148,18 @@ E2E_API_URL=http://127.0.0.1:8000 python scripts/e2e_smoke.py
 
 The smoke test covers registration, login, course creation, material upload and retry, analysis streaming, exam generation, submission, and saved result retrieval.
 
+To verify real Claude credentials and model configuration:
+```bash
+cd backend
+USE_MOCK_CLAUDE=false ANTHROPIC_API_KEY=your-key python scripts/claude_smoke.py
+```
+
+To run the browser smoke flow, start the backend and frontend first, then run:
+```bash
+cd frontend
+E2E_BASE_URL=http://127.0.0.1:3000 npm run e2e
+```
+
 ### Database Migrations
 ```bash
 cd backend
@@ -176,7 +188,9 @@ npm run dev
 | USE_MOCK_CLAUDE | Use deterministic mock AI responses | No (default in Docker: true) |
 | RUN_MIGRATIONS | Run Alembic before backend startup | No (default: true) |
 | AUTO_CREATE_TABLES | Fallback SQLAlchemy table creation | No (default in Docker: false) |
+| CORS_ORIGINS | Comma-separated frontend origins allowed by the API | No (local defaults) |
 | MATERIAL_PROCESSING_STALE_MINUTES | Mark abandoned material parsing jobs failed after this many minutes | No (default: 30) |
+| MAX_UPLOAD_FILES | Maximum number of files per upload request | No (default: 10) |
 | CLAUDE_MODEL | Claude model ID | No (default: claude-opus-4-1-20250805) |
 | THINKING_BUDGET_ANALYSIS | Thinking tokens for analysis | No (default: 30000) |
 | THINKING_BUDGET_GENERATION | Thinking tokens for generation | No (default: 10000) |

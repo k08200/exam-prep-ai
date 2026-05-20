@@ -153,6 +153,29 @@ async def test_upload_too_large_fails(
 
 
 @pytest.mark.asyncio
+async def test_upload_too_many_files_fails(
+    client: AsyncClient, auth_headers: dict, test_course: dict, monkeypatch
+) -> None:
+    """Uploading more than MAX_UPLOAD_FILES returns 422 before files are parsed."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "MAX_UPLOAD_FILES", 1)
+    course_id = test_course["id"]
+
+    resp = await client.post(
+        f"/courses/{course_id}/materials",
+        files=[
+            ("files", ("one.pdf", _make_tiny_pdf_bytes(), "application/pdf")),
+            ("files", ("two.pdf", _make_tiny_pdf_bytes(), "application/pdf")),
+        ],
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 422
+    assert "at most 1 files" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_upload_to_wrong_course_fails(
     client: AsyncClient, auth_headers: dict
 ) -> None:

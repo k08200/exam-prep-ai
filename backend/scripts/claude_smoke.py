@@ -1,0 +1,73 @@
+"""Smoke test real Claude API connectivity and model configuration.
+
+Usage:
+    USE_MOCK_CLAUDE=false ANTHROPIC_API_KEY=... python scripts/claude_smoke.py
+
+Set CLAUDE_SMOKE_STREAM=true to also verify streaming analysis events with a
+small thinking budget.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+
+from app.core.config import settings
+from app.services import get_claude_service
+
+
+async def main() -> None:
+    if not settings.ANTHROPIC_API_KEY:
+        raise SystemExit("ANTHROPIC_API_KEY is required for the Claude smoke test.")
+
+    settings.USE_MOCK_CLAUDE = False
+    service = get_claude_service()
+
+    grade = await service.grade_response(
+        question_text="What is photosynthesis?",
+        correct_answer="Plants convert light energy into chemical energy.",
+        student_answer="Plants use light to make stored chemical energy.",
+        question_type="essay",
+        concepts=["Photosynthesis"],
+    )
+
+    if not isinstance(grade.get("score"), float):
+        raise RuntimeError("Claude grading smoke test did not return a numeric score.")
+
+    stream_checked = False
+    if os.getenv("CLAUDE_SMOKE_STREAM", "").lower() in {"1", "true", "yes"}:
+        settings.THINKING_BUDGET_ANALYSIS = int(
+            os.getenv("CLAUDE_SMOKE_THINKING_BUDGET", "1024")
+        )
+        completed = False
+        async for event in service.analyze_professor_style(
+            course_name="Smoke Test Biology",
+            professor_name="Dr. Smoke",
+            materials_text=(
+                "Photosynthesis converts light energy into chemical energy. "
+                "Cellular respiration releases energy from glucose."
+            ),
+        ):
+            if event.get("type") == "complete":
+                completed = True
+                break
+        if not completed:
+            raise RuntimeError("Claude streaming smoke test did not complete.")
+        stream_checked = True
+
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "model": settings.CLAUDE_MODEL,
+                "grade_score": grade["score"],
+                "grade_tokens_used": grade["tokens_used"],
+                "stream_checked": stream_checked,
+            },
+            indent=2,
+        )
+    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

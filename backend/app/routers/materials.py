@@ -34,6 +34,7 @@ from app.services.file_parser import FileParser
 router = APIRouter(tags=["materials"])
 file_parser = FileParser()
 STALE_PROCESSING_ERROR = "Processing did not finish. Please retry this material."
+UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 # Map file extensions to internal file_type labels
 EXTENSION_TO_TYPE: dict[str, str] = {
@@ -130,6 +131,28 @@ async def recover_stale_processing_materials() -> int:
         return await mark_stale_processing_materials(session)
 
 
+async def _save_upload_file(upload_file: UploadFile, file_path: Path) -> int:
+    """Stream an uploaded file to disk and return the number of bytes written."""
+    file_size = 0
+    try:
+        async with aiofiles.open(file_path, "wb") as f:
+            while chunk := await upload_file.read(UPLOAD_CHUNK_SIZE):
+                file_size += len(chunk)
+                if file_size > settings.MAX_FILE_SIZE:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=(
+                            f"File '{upload_file.filename or 'unknown'}' exceeds "
+                            f"the {settings.MAX_FILE_SIZE // (1024 * 1024)} MB limit."
+                        ),
+                    )
+                await f.write(chunk)
+    except Exception:
+        file_path.unlink(missing_ok=True)
+        raise
+    return file_size
+
+
 @router.post(
     "/courses/{course_id}/materials",
     response_model=MaterialUploadResponse,
@@ -144,6 +167,12 @@ async def upload_materials(
 ) -> MaterialUploadResponse:
     """Upload one or more files to a course. Parsing happens in the background."""
     await _assert_course_ownership(course_id, current_user.id, db)
+
+    if len(files) > settings.MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Upload at most {settings.MAX_UPLOAD_FILES} files at a time.",
+        )
 
     upload_dir = Path(settings.UPLOAD_DIR) / str(course_id)
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -163,21 +192,10 @@ async def upload_materials(
                        f"Allowed: {sorted(settings.ALLOWED_EXTENSIONS)}",
             )
 
-        # Read first chunk to determine size without loading everything into memory
-        content = await upload_file.read()
-        file_size = len(content)
-
-        if file_size > settings.MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"File '{original_filename}' exceeds the 50 MB limit.",
-            )
-
         safe_filename = f"{uuid.uuid4()}{ext}"
         file_path = upload_dir / safe_filename
 
-        async with aiofiles.open(file_path, "wb") as f:
-            await f.write(content)
+        file_size = await _save_upload_file(upload_file, file_path)
 
         file_type = EXTENSION_TO_TYPE.get(ext, "unknown")
         material = Material(

@@ -55,7 +55,7 @@ The initial migration tolerates legacy local databases that were created before 
 ## Frontend
 
 - Build with `NEXT_PUBLIC_API_URL` pointing at the deployed backend URL.
-- Keep the frontend origin in the backend CORS allowlist.
+- Set `CORS_ORIGINS` to the deployed frontend origin, for example `https://app.example.com`.
 - Run `npm audit --audit-level=high` and `npm run build` before deployment.
 
 ## Smoke Test
@@ -69,6 +69,20 @@ E2E_API_URL=https://your-api.example.com python scripts/e2e_smoke.py
 
 This checks auth, course creation, material parsing, failed material retry, analysis streaming, exam generation, submission, and persisted result retrieval.
 
+Verify real Claude credentials and model configuration before disabling mock mode:
+
+```bash
+cd backend
+USE_MOCK_CLAUDE=false ANTHROPIC_API_KEY=your_anthropic_key python scripts/claude_smoke.py
+```
+
+For browser-level validation, run the frontend against the deployed API and execute:
+
+```bash
+cd frontend
+E2E_BASE_URL=https://your-frontend.example.com npm run e2e
+```
+
 ## Health Gates
 
 Before routing traffic:
@@ -78,3 +92,4 @@ Before routing traffic:
 - Frontend build points to the production API URL.
 - `USE_MOCK_CLAUDE` is false only when `ANTHROPIC_API_KEY` is configured.
 - Upload storage is persistent across restarts.
+- `MAX_UPLOAD_FILES` and `MAX_FILE_SIZE` match the frontend limits.

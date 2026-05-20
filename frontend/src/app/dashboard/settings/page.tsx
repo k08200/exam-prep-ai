@@ -127,8 +127,9 @@ export default function SettingsPage() {
           )}
           <form onSubmit={handleSubmit(onProfileSubmit)} className="space-y-4">
             <div>
-              <label className="label-base">Full Name</label>
+              <label htmlFor="full_name" className="label-base">Full Name</label>
               <input
+                id="full_name"
                 type="text"
                 className={`input-base ${errors.full_name ? 'border-red-400' : ''}`}
                 placeholder="Your full name"
@@ -142,8 +143,9 @@ export default function SettingsPage() {
               )}
             </div>
             <div>
-              <label className="label-base">Email Address</label>
+              <label htmlFor="email" className="label-base">Email Address</label>
               <input
+                id="email"
                 type="email"
                 className="input-base bg-gray-50 text-gray-500 cursor-not-allowed"
                 value={user?.email || ''}
@@ -183,8 +185,9 @@ export default function SettingsPage() {
           )}
           <form onSubmit={handleSubmitPw(onPasswordSubmit)} className="space-y-4">
             <div>
-              <label className="label-base">Current Password</label>
+              <label htmlFor="current_password" className="label-base">Current Password</label>
               <input
+                id="current_password"
                 type="password"
                 className={`input-base ${pwErrors.current_password ? 'border-red-400' : ''}`}
                 placeholder="••••••••"
@@ -195,8 +198,9 @@ export default function SettingsPage() {
               )}
             </div>
             <div>
-              <label className="label-base">New Password</label>
+              <label htmlFor="new_password" className="label-base">New Password</label>
               <input
+                id="new_password"
                 type="password"
                 className={`input-base ${pwErrors.new_password ? 'border-red-400' : ''}`}
                 placeholder="••••••••"
@@ -207,8 +211,9 @@ export default function SettingsPage() {
               )}
             </div>
             <div>
-              <label className="label-base">Confirm New Password</label>
+              <label htmlFor="confirm_password" className="label-base">Confirm New Password</label>
               <input
+                id="confirm_password"
                 type="password"
                 className={`input-base ${pwErrors.confirm_password ? 'border-red-400' : ''}`}
                 placeholder="••••••••"
