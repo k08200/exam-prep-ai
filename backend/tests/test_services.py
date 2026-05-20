@@ -398,6 +398,24 @@ def test_validate_runtime_settings_accepts_safe_production(monkeypatch) -> None:
     settings.validate_runtime_settings()
 
 
+def test_validate_runtime_settings_rejects_bad_timeout(monkeypatch) -> None:
+    """Production mode rejects non-positive request timeout settings."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "SECRET_KEY", "x" * 40)
+    monkeypatch.setattr(settings, "USE_MOCK_CLAUDE", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "AUTO_CREATE_TABLES", False)
+    monkeypatch.setattr(settings, "CORS_ORIGINS", "https://app.example.com")
+    monkeypatch.setattr(settings, "REQUEST_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr(settings, "AUTH_RATE_LIMIT_MAX_FAILURES", 5)
+    monkeypatch.setattr(settings, "AUTH_RATE_LIMIT_WINDOW_SECONDS", 300)
+
+    with pytest.raises(RuntimeError, match="REQUEST_TIMEOUT_SECONDS"):
+        settings.validate_runtime_settings()
+
+
 @pytest.mark.asyncio
 async def test_health_endpoint(client) -> None:
     """GET /health returns liveness and AI mode metadata."""
@@ -407,6 +425,54 @@ async def test_health_endpoint(client) -> None:
     assert data["status"] == "ok"
     assert data["ai_mode"] == "mock"
     assert data["claude_configured"] is False
+
+
+@pytest.mark.asyncio
+async def test_request_id_header_is_returned(client) -> None:
+    """The request middleware returns caller-provided request IDs for tracing."""
+    resp = await client.get("/health", headers={"X-Request-ID": "test-request-id"})
+
+    assert resp.status_code == 200
+    assert resp.headers["X-Request-ID"] == "test-request-id"
+
+
+@pytest.mark.asyncio
+async def test_request_context_middleware_times_out(monkeypatch) -> None:
+    """The request middleware returns 504 when request setup exceeds timeout."""
+    import asyncio
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    from app.core.config import settings
+    from app.core.middleware import request_context_middleware
+
+    monkeypatch.setattr(settings, "REQUEST_TIMEOUT_SECONDS", 0.001)
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def slow_call_next(request: Request) -> Response:
+        await asyncio.sleep(0.01)
+        return Response("ok")
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/slow",
+            "headers": [],
+            "query_string": b"",
+            "server": ("testserver", 80),
+            "scheme": "http",
+            "client": ("127.0.0.1", 1234),
+        },
+        receive,
+    )
+
+    response = await request_context_middleware(request, slow_call_next)
+
+    assert response.status_code == 504
+    assert response.headers["X-Request-ID"]
 
 
 @pytest.mark.asyncio

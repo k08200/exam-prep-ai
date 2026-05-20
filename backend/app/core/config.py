@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     }
     UPLOAD_DIR: str = "./uploads"
     MATERIAL_PROCESSING_STALE_MINUTES: int = 30
+    REQUEST_TIMEOUT_SECONDS: float = 60.0
+    AUTH_RATE_LIMIT_MAX_FAILURES: int = 5
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: int = 300
 
     # Set to true to use mock responses (no API key required)
     USE_MOCK_CLAUDE: bool = False
@@ -84,6 +87,12 @@ class Settings(BaseSettings):
             raise RuntimeError("Production must set AUTO_CREATE_TABLES=false and use migrations.")
         if not self.cors_origins:
             raise RuntimeError("Production CORS_ORIGINS must include the frontend origin.")
+        if self.REQUEST_TIMEOUT_SECONDS <= 0:
+            raise RuntimeError("Production REQUEST_TIMEOUT_SECONDS must be positive.")
+        if self.AUTH_RATE_LIMIT_MAX_FAILURES <= 0:
+            raise RuntimeError("Production AUTH_RATE_LIMIT_MAX_FAILURES must be positive.")
+        if self.AUTH_RATE_LIMIT_WINDOW_SECONDS <= 0:
+            raise RuntimeError("Production AUTH_RATE_LIMIT_WINDOW_SECONDS must be positive.")
 
 
 settings = Settings()

@@ -136,6 +136,21 @@ async def test_upload_invalid_extension_fails(
 
 
 @pytest.mark.asyncio
+async def test_upload_mismatched_content_type_fails(
+    client: AsyncClient, auth_headers: dict, test_course: dict
+) -> None:
+    """A misleading extension/content-type pair is rejected before saving."""
+    course_id = test_course["id"]
+    resp = await client.post(
+        f"/courses/{course_id}/materials",
+        files={"files": ("lecture.pdf", _make_tiny_pdf_bytes(), "image/png")},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+    assert "does not match" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_upload_too_large_fails(
     client: AsyncClient, auth_headers: dict, test_course: dict
 ) -> None:

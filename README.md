@@ -46,6 +46,10 @@ The dev override bind-mounts `backend/` and `frontend/` into the containers:
 - Backend runs `alembic upgrade head` before starting unless `RUN_MIGRATIONS=false`
 - Uploaded files still persist in the shared `uploads_data` volume
 
+## Runtime Safety
+
+The backend adds a request ID to every response (`X-Request-ID`), logs request outcomes, caps request setup time with `REQUEST_TIMEOUT_SECONDS`, and rate-limits repeated failed logins with `AUTH_RATE_LIMIT_MAX_FAILURES` over `AUTH_RATE_LIMIT_WINDOW_SECONDS`. Uploads also validate obvious extension/content-type mismatches before saving files.
+
 ## Architecture
 
 ```

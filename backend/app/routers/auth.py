@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -5,6 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import (
     create_access_token,
@@ -18,11 +20,38 @@ from app.models.user import User
 from app.schemas.auth import Token, UserCreate, UserResponse, UserUpdate, PasswordChange
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+_failed_login_attempts: dict[str, list[float]] = {}
 
 
 def _normalize_email(email: str) -> str:
     """Use one canonical form for login, registration, and token lookup."""
     return email.strip().lower()
+
+
+def _prune_login_attempts(email: str, now: float) -> list[float]:
+    cutoff = now - settings.AUTH_RATE_LIMIT_WINDOW_SECONDS
+    attempts = [
+        ts for ts in _failed_login_attempts.get(email, [])
+        if ts >= cutoff
+    ]
+    if attempts:
+        _failed_login_attempts[email] = attempts
+    else:
+        _failed_login_attempts.pop(email, None)
+    return attempts
+
+
+def _record_failed_login(email: str, now: float) -> None:
+    attempts = _prune_login_attempts(email, now)
+    attempts.append(now)
+    _failed_login_attempts[email] = attempts
+
+
+def _clear_failed_logins(email: str | None = None) -> None:
+    if email is None:
+        _failed_login_attempts.clear()
+    else:
+        _failed_login_attempts.pop(email, None)
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -58,10 +87,18 @@ async def login(
 ) -> Token:
     """Authenticate a user and return a JWT access token."""
     email = _normalize_email(form_data.username)
+    now = time.monotonic()
+    if len(_prune_login_attempts(email, now)) >= settings.AUTH_RATE_LIMIT_MAX_FAILURES:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed login attempts. Please try again later.",
+        )
+
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
     if user is None or not verify_password(form_data.password, user.hashed_password):
+        _record_failed_login(email, now)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -73,6 +110,7 @@ async def login(
             detail="Inactive user account",
         )
 
+    _clear_failed_logins(email)
     access_token = create_access_token(data={"sub": user.email})
     return Token(access_token=access_token, token_type="bearer")
 

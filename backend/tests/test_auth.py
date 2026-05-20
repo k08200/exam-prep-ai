@@ -137,6 +137,41 @@ async def test_login_nonexistent_user_fails(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_login_rate_limit_after_repeated_failures(
+    client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """Repeated failed logins for the same email are temporarily rate-limited."""
+    from app.core.config import settings
+    from app.routers.auth import _clear_failed_logins
+
+    monkeypatch.setattr(settings, "AUTH_RATE_LIMIT_MAX_FAILURES", 2)
+    monkeypatch.setattr(settings, "AUTH_RATE_LIMIT_WINDOW_SECONDS", 300)
+    _clear_failed_logins()
+
+    await client.post(
+        "/auth/register",
+        json={"email": "ratelimit@example.com", "password": "securepass123"},
+    )
+
+    for _ in range(2):
+        resp = await client.post(
+            "/auth/login",
+            data={"username": "ratelimit@example.com", "password": "wrongpassword"},
+        )
+        assert resp.status_code == 401
+
+    limited = await client.post(
+        "/auth/login",
+        data={"username": "ratelimit@example.com", "password": "wrongpassword"},
+    )
+
+    assert limited.status_code == 429
+    assert "too many" in limited.json()["detail"].lower()
+    _clear_failed_logins()
+
+
+@pytest.mark.asyncio
 async def test_get_me_authenticated(client: AsyncClient, auth_headers: dict) -> None:
     """An authenticated user can retrieve their own profile."""
     resp = await client.get("/auth/me", headers=auth_headers)

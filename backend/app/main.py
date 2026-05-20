@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import init_db
+from app.core.middleware import request_context_middleware
 from app.routers import auth, courses, materials, analysis, exams
 
 
@@ -46,6 +47,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.middleware("http")(request_context_middleware)
 
 # Routers
 app.include_router(auth.router)

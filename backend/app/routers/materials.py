@@ -47,6 +47,23 @@ EXTENSION_TO_TYPE: dict[str, str] = {
     ".jpg": "image",
     ".jpeg": "image",
 }
+GENERIC_UPLOAD_MIME_TYPES = {"", "application/octet-stream", "binary/octet-stream"}
+EXTENSION_TO_MIME_TYPES: dict[str, set[str]] = {
+    ".pdf": {"application/pdf"},
+    ".ppt": {"application/vnd.ms-powerpoint"},
+    ".pptx": {
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    },
+    ".doc": {"application/msword"},
+    ".docx": {
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    },
+    ".png": {"image/png"},
+    ".jpg": {"image/jpeg", "image/pjpeg"},
+    ".jpeg": {"image/jpeg", "image/pjpeg"},
+}
 
 
 async def _assert_course_ownership(
@@ -59,6 +76,23 @@ async def _assert_course_ownership(
     if course.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return course
+
+
+def _validate_upload_content_type(upload_file: UploadFile, ext: str) -> None:
+    """Reject obvious extension/content-type mismatches while allowing generic clients."""
+    content_type = (upload_file.content_type or "").lower().split(";")[0].strip()
+    if content_type in GENERIC_UPLOAD_MIME_TYPES:
+        return
+
+    expected = EXTENSION_TO_MIME_TYPES.get(ext, set())
+    if expected and content_type not in expected:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"File '{upload_file.filename or 'unknown'}' has content type "
+                f"'{content_type}', which does not match extension '{ext}'."
+            ),
+        )
 
 
 async def _parse_and_update(material_id: uuid.UUID, file_path: str, file_type: str) -> None:
@@ -191,6 +225,7 @@ async def upload_materials(
                 detail=f"File type '{ext}' is not allowed. "
                        f"Allowed: {sorted(settings.ALLOWED_EXTENSIONS)}",
             )
+        _validate_upload_content_type(upload_file, ext)
 
     try:
         for upload_file in files:
