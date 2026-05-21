@@ -18,6 +18,7 @@ from app.services import get_claude_service
 
 router = APIRouter(tags=["analysis"])
 claude_service = get_claude_service()
+_analysis_course_locks: set[uuid.UUID] = set()
 
 
 async def _assert_course_ownership(
@@ -36,6 +37,7 @@ async def _stream_analysis(
     course: Course,
     materials_text: str,
     db: AsyncSession,
+    lock_course_id: uuid.UUID,
 ) -> AsyncGenerator[str, None]:
     """Internal generator: stream SSE events for professor analysis."""
     raw_text_parts: list[str] = []
@@ -44,94 +46,97 @@ async def _stream_analysis(
     final_analysis: dict | None = None
 
     try:
-        yield sse_event({"type": "heartbeat"})
-        async for event in iter_with_heartbeat(
-            claude_service.analyze_professor_style(
-                course_name=course.name,
-                professor_name=course.professor_name or "Unknown Professor",
-                materials_text=materials_text,
+        try:
+            yield sse_event({"type": "heartbeat"})
+            async for event in iter_with_heartbeat(
+                claude_service.analyze_professor_style(
+                    course_name=course.name,
+                    professor_name=course.professor_name or "Unknown Professor",
+                    materials_text=materials_text,
+                )
+            ):
+                event_type = event.get("type")
+                if event_type == "heartbeat":
+                    yield sse_event(event)
+                elif event_type == "error":
+                    yield sse_event(event)
+                    return
+                elif event_type == "thinking":
+                    thinking_tokens = event.get("tokens", thinking_tokens)
+                    yield sse_event(
+                        {"type": "thinking", "content": event.get("content", ""), "tokens_used": thinking_tokens}
+                    )
+                elif event_type == "text":
+                    raw_text_parts.append(event.get("content", ""))
+                    total_tokens = event.get("tokens", total_tokens)
+                    yield sse_event(
+                        {"type": "text", "content": event.get("content", ""), "tokens_used": total_tokens}
+                    )
+                elif event_type == "complete":
+                    final_analysis = event.get("analysis")
+                    total_tokens = event.get("tokens", total_tokens)
+                    thinking_tokens = event.get("thinking_tokens", thinking_tokens)
+
+        except Exception as exc:
+            yield sse_event({"type": "error", "content": str(exc), "retryable": True})
+            return
+
+        if final_analysis is None:
+            yield sse_event(
+                {
+                    "type": "error",
+                    "content": "Analysis did not produce structured output",
+                    "retryable": True,
+                }
             )
-        ):
-            event_type = event.get("type")
-            if event_type == "heartbeat":
-                yield sse_event(event)
-            elif event_type == "error":
-                yield sse_event(event)
-                return
-            elif event_type == "thinking":
-                thinking_tokens = event.get("tokens", thinking_tokens)
-                yield sse_event(
-                    {"type": "thinking", "content": event.get("content", ""), "tokens_used": thinking_tokens}
-                )
-            elif event_type == "text":
-                raw_text_parts.append(event.get("content", ""))
-                total_tokens = event.get("tokens", total_tokens)
-                yield sse_event(
-                    {"type": "text", "content": event.get("content", ""), "tokens_used": total_tokens}
-                )
-            elif event_type == "complete":
-                final_analysis = event.get("analysis")
-                total_tokens = event.get("tokens", total_tokens)
-                thinking_tokens = event.get("thinking_tokens", thinking_tokens)
+            return
 
-    except Exception as exc:
-        yield sse_event({"type": "error", "content": str(exc), "retryable": True})
-        return
+        # Persist / upsert analysis to DB
+        existing_result = await db.execute(
+            select(ProfessorAnalysis).where(ProfessorAnalysis.course_id == course.id)
+        )
+        existing = existing_result.scalar_one_or_none()
 
-    if final_analysis is None:
+        raw_text = "".join(raw_text_parts)
+
+        if existing is not None:
+            existing.top_concepts = final_analysis.get("top_concepts", [])
+            existing.question_types = final_analysis.get("question_types", {})
+            existing.topic_distribution = final_analysis.get("topic_distribution", {})
+            existing.professor_terms = final_analysis.get("professor_terms", [])
+            existing.exam_patterns = final_analysis.get("exam_patterns", {})
+            existing.raw_analysis = raw_text
+            existing.thinking_tokens_used = thinking_tokens
+            existing.total_tokens_used = total_tokens
+            analysis_record = existing
+        else:
+            analysis_record = ProfessorAnalysis(
+                course_id=course.id,
+                top_concepts=final_analysis.get("top_concepts", []),
+                question_types=final_analysis.get("question_types", {}),
+                topic_distribution=final_analysis.get("topic_distribution", {}),
+                professor_terms=final_analysis.get("professor_terms", []),
+                exam_patterns=final_analysis.get("exam_patterns", {}),
+                raw_analysis=raw_text,
+                thinking_tokens_used=thinking_tokens,
+                total_tokens_used=total_tokens,
+            )
+            db.add(analysis_record)
+
+        await db.commit()
+        await db.refresh(analysis_record)
+
         yield sse_event(
             {
-                "type": "error",
-                "content": "Analysis did not produce structured output",
-                "retryable": True,
+                "type": "complete",
+                "content": "Analysis complete",
+                "analysis_id": str(analysis_record.id),
+                "tokens_used": total_tokens,
+                "thinking_tokens": thinking_tokens,
             }
         )
-        return
-
-    # Persist / upsert analysis to DB
-    existing_result = await db.execute(
-        select(ProfessorAnalysis).where(ProfessorAnalysis.course_id == course.id)
-    )
-    existing = existing_result.scalar_one_or_none()
-
-    raw_text = "".join(raw_text_parts)
-
-    if existing is not None:
-        existing.top_concepts = final_analysis.get("top_concepts", [])
-        existing.question_types = final_analysis.get("question_types", {})
-        existing.topic_distribution = final_analysis.get("topic_distribution", {})
-        existing.professor_terms = final_analysis.get("professor_terms", [])
-        existing.exam_patterns = final_analysis.get("exam_patterns", {})
-        existing.raw_analysis = raw_text
-        existing.thinking_tokens_used = thinking_tokens
-        existing.total_tokens_used = total_tokens
-        analysis_record = existing
-    else:
-        analysis_record = ProfessorAnalysis(
-            course_id=course.id,
-            top_concepts=final_analysis.get("top_concepts", []),
-            question_types=final_analysis.get("question_types", {}),
-            topic_distribution=final_analysis.get("topic_distribution", {}),
-            professor_terms=final_analysis.get("professor_terms", []),
-            exam_patterns=final_analysis.get("exam_patterns", {}),
-            raw_analysis=raw_text,
-            thinking_tokens_used=thinking_tokens,
-            total_tokens_used=total_tokens,
-        )
-        db.add(analysis_record)
-
-    await db.commit()
-    await db.refresh(analysis_record)
-
-    yield sse_event(
-        {
-            "type": "complete",
-            "content": "Analysis complete",
-            "analysis_id": str(analysis_record.id),
-            "tokens_used": total_tokens,
-            "thinking_tokens": thinking_tokens,
-        }
-    )
+    finally:
+        _analysis_course_locks.discard(lock_course_id)
 
 
 @router.post("/courses/{course_id}/analysis")
@@ -160,13 +165,20 @@ async def run_analysis(
             detail="No completed materials found. Please upload and wait for processing.",
         )
 
+    if course_id in _analysis_course_locks:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Analysis is already running for this course.",
+        )
+    _analysis_course_locks.add(course_id)
+
     materials_text = "\n\n---\n\n".join(
         f"[File: {m.original_filename}]\n{m.extracted_text or ''}"
         for m in completed_materials
     )
 
     return StreamingResponse(
-        _stream_analysis(course, materials_text, db),
+        _stream_analysis(course, materials_text, db, course_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

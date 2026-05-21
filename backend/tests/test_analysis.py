@@ -137,6 +137,54 @@ async def test_analyze_creates_analysis_record(
 
 
 @pytest.mark.asyncio
+async def test_analysis_conflict_when_course_already_running(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """A second analysis request for the same course is rejected while one is running."""
+    from app.routers.analysis import _analysis_course_locks
+
+    course_id = uuid.UUID(test_course["id"])
+    await _create_completed_material(db_session, course_id)
+    await db_session.commit()
+    _analysis_course_locks.add(course_id)
+
+    try:
+        resp = await client.post(f"/courses/{course_id}/analysis", headers=auth_headers)
+    finally:
+        _analysis_course_locks.discard(course_id)
+
+    assert resp.status_code == 409
+    assert "already running" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_analysis_lock_released_after_completion(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """The in-flight analysis lock is released after the stream completes."""
+    from app.routers.analysis import _analysis_course_locks
+
+    course_id = uuid.UUID(test_course["id"])
+    await _create_completed_material(db_session, course_id)
+    await db_session.commit()
+
+    with patch(
+        "app.routers.analysis.claude_service.analyze_professor_style",
+        return_value=_mock_analyze_generator(),
+    ):
+        resp = await client.post(f"/courses/{course_id}/analysis", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert course_id not in _analysis_course_locks
+
+
+@pytest.mark.asyncio
 async def test_get_analysis_returns_saved(
     client: AsyncClient,
     auth_headers: dict,

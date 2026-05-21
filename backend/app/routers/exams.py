@@ -41,6 +41,7 @@ from app.services import get_claude_service
 router = APIRouter(tags=["exams"])
 claude_service = get_claude_service()
 analytics_service = AnalyticsService()
+_exam_generation_course_locks: set[uuid.UUID] = set()
 
 
 async def _assert_course_ownership(
@@ -80,132 +81,136 @@ async def _stream_exam_generation(
     analysis: ProfessorAnalysis,
     exam_create: ExamCreate,
     db: AsyncSession,
+    lock_course_id: uuid.UUID,
 ) -> AsyncGenerator[str, None]:
     """Stream question generation via SSE, persisting each question as it arrives."""
     total_tokens = 0
     question_number = 1
 
-    # Determine topics for cram mode
-    topics = exam_create.topics
-    if exam_create.mode == "cram" and not topics:
-        user_concepts_result = await db.execute(
-            select(ConceptTracking).where(
-                ConceptTracking.user_id == exam.user_id,
-                ConceptTracking.course_id == exam.course_id,
-            ).order_by(ConceptTracking.weakness_score.desc())
-        )
-        user_concepts = [
-            {"concept": ct.concept, "weakness_score": ct.weakness_score}
-            for ct in user_concepts_result.scalars().all()
-        ]
-        topics = await analytics_service.get_cram_topics(
-            analysis={
-                "top_concepts": analysis.top_concepts,
-                "topic_distribution": analysis.topic_distribution,
-            },
-            user_concepts=user_concepts,
-        )
-
     try:
-        yield _sse_event({"type": "heartbeat"})
-        async for event in iter_with_heartbeat(
-            claude_service.generate_exam_questions(
-                course_name=course.name,
+        # Determine topics for cram mode
+        topics = exam_create.topics
+        if exam_create.mode == "cram" and not topics:
+            user_concepts_result = await db.execute(
+                select(ConceptTracking).where(
+                    ConceptTracking.user_id == exam.user_id,
+                    ConceptTracking.course_id == exam.course_id,
+                ).order_by(ConceptTracking.weakness_score.desc())
+            )
+            user_concepts = [
+                {"concept": ct.concept, "weakness_score": ct.weakness_score}
+                for ct in user_concepts_result.scalars().all()
+            ]
+            topics = await analytics_service.get_cram_topics(
                 analysis={
                     "top_concepts": analysis.top_concepts,
-                    "question_types": analysis.question_types,
                     "topic_distribution": analysis.topic_distribution,
-                    "professor_terms": analysis.professor_terms,
-                    "exam_patterns": analysis.exam_patterns,
                 },
-                question_count=exam_create.question_count,
-                mode=exam_create.mode,
-                topics=topics,
+                user_concepts=user_concepts,
             )
-        ):
-            event_type = event.get("type")
 
-            if event_type == "heartbeat":
-                yield _sse_event(event)
-            elif event_type == "error":
-                await db.rollback()
-                yield _sse_event(event)
-                return
-            elif event_type == "question":
-                q_data = event.get("question", {})
-                tokens = event.get("tokens", 0)
-                total_tokens += tokens
-
-                question = ExamQuestion(
-                    exam_id=exam.id,
-                    question_number=question_number,
-                    question_text=q_data.get("question_text", ""),
-                    question_type=q_data.get("question_type", "essay"),
-                    choices=q_data.get("choices"),
-                    correct_answer=q_data.get("correct_answer", ""),
-                    explanation=q_data.get("explanation", ""),
-                    concepts=q_data.get("concepts", []),
-                    difficulty=q_data.get("difficulty", "medium"),
-                    tokens_used=tokens,
+        try:
+            yield _sse_event({"type": "heartbeat"})
+            async for event in iter_with_heartbeat(
+                claude_service.generate_exam_questions(
+                    course_name=course.name,
+                    analysis={
+                        "top_concepts": analysis.top_concepts,
+                        "question_types": analysis.question_types,
+                        "topic_distribution": analysis.topic_distribution,
+                        "professor_terms": analysis.professor_terms,
+                        "exam_patterns": analysis.exam_patterns,
+                    },
+                    question_count=exam_create.question_count,
+                    mode=exam_create.mode,
+                    topics=topics,
                 )
-                db.add(question)
-                await db.flush()
-                await db.refresh(question)
+            ):
+                event_type = event.get("type")
 
-                question_number += 1
+                if event_type == "heartbeat":
+                    yield _sse_event(event)
+                elif event_type == "error":
+                    await db.rollback()
+                    yield _sse_event(event)
+                    return
+                elif event_type == "question":
+                    q_data = event.get("question", {})
+                    tokens = event.get("tokens", 0)
+                    total_tokens += tokens
 
-                yield _sse_event(
-                    {
-                        "type": "question",
-                        "question": {
-                            "id": str(question.id),
-                            "question_number": question.question_number,
-                            "question_text": question.question_text,
-                            "question_type": question.question_type,
-                            "choices": question.choices,
-                            "difficulty": question.difficulty,
-                            "concepts": question.concepts,
-                        },
-                        "tokens_used": tokens,
-                    }
-                )
+                    question = ExamQuestion(
+                        exam_id=exam.id,
+                        question_number=question_number,
+                        question_text=q_data.get("question_text", ""),
+                        question_type=q_data.get("question_type", "essay"),
+                        choices=q_data.get("choices"),
+                        correct_answer=q_data.get("correct_answer", ""),
+                        explanation=q_data.get("explanation", ""),
+                        concepts=q_data.get("concepts", []),
+                        difficulty=q_data.get("difficulty", "medium"),
+                        tokens_used=tokens,
+                    )
+                    db.add(question)
+                    await db.flush()
+                    await db.refresh(question)
 
-            elif event_type == "complete":
-                total_tokens = event.get("tokens", total_tokens)
+                    question_number += 1
 
-    except Exception as exc:
-        await db.rollback()
-        yield _sse_event({"type": "error", "content": str(exc), "retryable": True})
-        return
+                    yield _sse_event(
+                        {
+                            "type": "question",
+                            "question": {
+                                "id": str(question.id),
+                                "question_number": question.question_number,
+                                "question_text": question.question_text,
+                                "question_type": question.question_type,
+                                "choices": question.choices,
+                                "difficulty": question.difficulty,
+                                "concepts": question.concepts,
+                            },
+                            "tokens_used": tokens,
+                        }
+                    )
 
-    generated_count = question_number - 1
-    if generated_count != exam_create.question_count:
-        await db.rollback()
+                elif event_type == "complete":
+                    total_tokens = event.get("tokens", total_tokens)
+
+        except Exception as exc:
+            await db.rollback()
+            yield _sse_event({"type": "error", "content": str(exc), "retryable": True})
+            return
+
+        generated_count = question_number - 1
+        if generated_count != exam_create.question_count:
+            await db.rollback()
+            yield _sse_event(
+                {
+                    "type": "error",
+                    "content": (
+                        "Exam generation failed: expected "
+                        f"{exam_create.question_count} questions, got {generated_count}."
+                    ),
+                    "retryable": True,
+                }
+            )
+            return
+
+        # Finalize exam record
+        exam.status = EXAM_STATUS_ACTIVE
+        exam.total_tokens_used = total_tokens
+        await db.commit()
+
         yield _sse_event(
             {
-                "type": "error",
-                "content": (
-                    "Exam generation failed: expected "
-                    f"{exam_create.question_count} questions, got {generated_count}."
-                ),
-                "retryable": True,
+                "type": "complete",
+                "exam_id": str(exam.id),
+                "total_tokens": total_tokens,
+                "question_count": question_number - 1,
             }
         )
-        return
-
-    # Finalize exam record
-    exam.status = EXAM_STATUS_ACTIVE
-    exam.total_tokens_used = total_tokens
-    await db.commit()
-
-    yield _sse_event(
-        {
-            "type": "complete",
-            "exam_id": str(exam.id),
-            "total_tokens": total_tokens,
-            "question_count": question_number - 1,
-        }
-    )
+    finally:
+        _exam_generation_course_locks.discard(lock_course_id)
 
 
 @router.get("/exams", response_model=list[ExamResponse])
@@ -247,6 +252,13 @@ async def create_exam(
             detail="Professor analysis not found. Run POST /courses/{course_id}/analysis first.",
         )
 
+    if course_id in _exam_generation_course_locks:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Exam generation is already running for this course.",
+        )
+    _exam_generation_course_locks.add(course_id)
+
     exam = Exam(
         course_id=course_id,
         user_id=current_user.id,
@@ -260,7 +272,7 @@ async def create_exam(
     await db.refresh(exam)
 
     return StreamingResponse(
-        _stream_exam_generation(exam, course, analysis, exam_create, db),
+        _stream_exam_generation(exam, course, analysis, exam_create, db, course_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -130,6 +130,8 @@ export default function CourseDetailPage() {
   });
 
   const handleStartAnalysis = async () => {
+    if (isAnalyzing) return;
+
     if (!course || course.completed_material_count === 0) {
       setAnalysisError('Wait for at least one material to finish processing before analysis.');
       return;
@@ -167,6 +169,8 @@ export default function CourseDetailPage() {
   };
 
   const handleGenerateExam = async () => {
+    if (isGenerating) return;
+
     if (!generateOptions.title.trim()) {
       setGenerateError('Please enter an exam title.');
       return;
