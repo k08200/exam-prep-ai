@@ -259,17 +259,21 @@ async def create_exam(
         )
     _exam_generation_course_locks.add(course_id)
 
-    exam = Exam(
-        course_id=course_id,
-        user_id=current_user.id,
-        title=exam_create.title,
-        mode=exam_create.mode,
-        question_count=exam_create.question_count,
-        status=EXAM_STATUS_DRAFT,
-    )
-    db.add(exam)
-    await db.flush()
-    await db.refresh(exam)
+    try:
+        exam = Exam(
+            course_id=course_id,
+            user_id=current_user.id,
+            title=exam_create.title,
+            mode=exam_create.mode,
+            question_count=exam_create.question_count,
+            status=EXAM_STATUS_DRAFT,
+        )
+        db.add(exam)
+        await db.flush()
+        await db.refresh(exam)
+    except Exception:
+        _exam_generation_course_locks.discard(course_id)
+        raise
 
     return StreamingResponse(
         _stream_exam_generation(exam, course, analysis, exam_create, db, course_id),

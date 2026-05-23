@@ -223,6 +223,38 @@ async def test_exam_generation_lock_released_after_completion(
 
 
 @pytest.mark.asyncio
+async def test_exam_generation_lock_released_after_stream_error(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """The in-flight exam generation lock is released when the provider stream errors."""
+    from app.routers.exams import _exam_generation_course_locks
+
+    async def error_generator():
+        yield {"type": "error", "content": "provider busy", "retryable": True}
+
+    course_id = uuid.UUID(test_course["id"])
+    await _create_analysis(db_session, course_id)
+    await db_session.commit()
+
+    with patch(
+        "app.routers.exams.claude_service.generate_exam_questions",
+        return_value=error_generator(),
+    ):
+        resp = await client.post(
+            f"/courses/{course_id}/exams",
+            json={"title": "Provider Error", "question_count": 2, "mode": "standard"},
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    assert "provider busy" in resp.text
+    assert course_id not in _exam_generation_course_locks
+
+
+@pytest.mark.asyncio
 async def test_exam_question_count_correct(
     client: AsyncClient,
     auth_headers: dict,

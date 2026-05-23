@@ -185,6 +185,34 @@ async def test_analysis_lock_released_after_completion(
 
 
 @pytest.mark.asyncio
+async def test_analysis_lock_released_after_stream_error(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """The in-flight analysis lock is released when the provider stream errors."""
+    from app.routers.analysis import _analysis_course_locks
+
+    async def error_generator():
+        yield {"type": "error", "content": "provider busy", "retryable": True}
+
+    course_id = uuid.UUID(test_course["id"])
+    await _create_completed_material(db_session, course_id)
+    await db_session.commit()
+
+    with patch(
+        "app.routers.analysis.claude_service.analyze_professor_style",
+        return_value=error_generator(),
+    ):
+        resp = await client.post(f"/courses/{course_id}/analysis", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert "provider busy" in resp.text
+    assert course_id not in _analysis_course_locks
+
+
+@pytest.mark.asyncio
 async def test_get_analysis_returns_saved(
     client: AsyncClient,
     auth_headers: dict,

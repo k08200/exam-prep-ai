@@ -37,6 +37,14 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'heatmap', label: 'Heatmap', icon: <BarChart3 className="h-4 w-4" /> },
 ];
 
+function getBusyStreamMessage(message: string, kind: 'analysis' | 'exam') {
+  if (!message.toLowerCase().includes('already running')) return message;
+  if (kind === 'analysis') {
+    return 'Analysis is already running for this course. Wait a moment, then refresh the results.';
+  }
+  return 'Exam generation is already running for this course. Wait for it to finish before starting another.';
+}
+
 interface GenerateExamOptions {
   title: string;
   question_count: number;
@@ -158,7 +166,7 @@ export default function CourseDetailPage() {
         setAnalysisComplete(true);
       },
       onError: (err) => {
-        setAnalysisError(err);
+        setAnalysisError(getBusyStreamMessage(err, 'analysis'));
       },
     });
   };
@@ -265,7 +273,9 @@ export default function CourseDetailPage() {
       if (err instanceof Error && err.name === 'AbortError') {
         setGenerateError('Exam generation cancelled.');
       } else {
-        setGenerateError(extractErrorMessage(err, 'Failed to generate exam.'));
+        setGenerateError(
+          getBusyStreamMessage(extractErrorMessage(err, 'Failed to generate exam.'), 'exam')
+        );
       }
     } finally {
       generateControllerRef.current = null;
