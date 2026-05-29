@@ -31,6 +31,7 @@ from app.models.material import (
 from app.models.user import User
 from app.schemas.material import MaterialResponse, MaterialUploadResponse
 from app.services.file_parser import FileParser
+from app.services.material_quality import require_usable_extracted_text
 
 router = APIRouter(tags=["materials"])
 file_parser = FileParser()
@@ -124,7 +125,7 @@ async def _parse_and_update(material_id: uuid.UUID, file_path: str, file_type: s
             await session.flush()
 
             parsed = await file_parser.parse_file(file_path, file_type)
-            material.extracted_text = parsed["text"]
+            material.extracted_text = require_usable_extracted_text(parsed.get("text"))
             material.page_count = parsed.get("page_count")
             material.processing_status = PROCESSING_STATUS_COMPLETED
             material.processing_error = None

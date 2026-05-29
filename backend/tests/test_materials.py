@@ -466,6 +466,49 @@ async def test_parse_failure_sets_processing_error(
 
 
 @pytest.mark.asyncio
+async def test_parse_empty_text_marks_material_failed(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Files that parse successfully but contain too little text are not analysis-ready."""
+    from app.routers.materials import _parse_and_update
+    from app.services.material_quality import INSUFFICIENT_TEXT_ERROR
+
+    course_id = test_course["id"]
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("blank.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+            headers=auth_headers,
+        )
+    material_id = upload_resp.json()["materials"][0]["id"]
+    await db_session.commit()
+
+    class TestSessionContext:
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    with patch(
+        "app.routers.materials.file_parser.parse_file",
+        new=AsyncMock(return_value={"text": "   \n  ", "page_count": 1}),
+    ), patch(
+        "app.core.database.AsyncSessionLocal",
+        return_value=TestSessionContext(),
+    ):
+        await _parse_and_update(uuid.UUID(material_id), "/tmp/blank.pdf", "pdf")
+
+    result = await db_session.execute(select(Material).where(Material.id == uuid.UUID(material_id)))
+    material = result.scalar_one()
+    assert material.processing_status == PROCESSING_STATUS_FAILED
+    assert material.processing_error == INSUFFICIENT_TEXT_ERROR
+
+
+@pytest.mark.asyncio
 async def test_retry_failed_material_resets_status(
     client: AsyncClient,
     auth_headers: dict,

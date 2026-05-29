@@ -56,6 +56,13 @@ const STATUS_CONFIG: Record<
   },
 };
 
+function getMaterialErrorLabel(error: string) {
+  if (error.toLowerCase().includes('extract enough text')) {
+    return 'No readable text found';
+  }
+  return error;
+}
+
 export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
   const queryClient = useQueryClient();
   const [materialToDelete, setMaterialToDelete] = useState<Material | null>(null);
@@ -204,7 +211,7 @@ export function MaterialsList({ courseId, onUploadClick }: MaterialsListProps) {
                       </span>
                       {material.processing_status === 'failed' && material.processing_error && (
                         <p className="text-xs text-red-600 max-w-[220px] truncate" title={material.processing_error}>
-                          {material.processing_error}
+                          {getMaterialErrorLabel(material.processing_error)}
                         </p>
                       )}
                     </div>

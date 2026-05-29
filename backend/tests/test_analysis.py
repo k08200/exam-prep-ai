@@ -267,6 +267,35 @@ async def test_analysis_without_materials_fails(
 
 
 @pytest.mark.asyncio
+async def test_analysis_without_usable_material_text_fails(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Completed materials with empty extracted text are not enough for analysis."""
+    course_id = test_course["id"]
+    mat = Material(
+        course_id=uuid.UUID(course_id),
+        filename="blank.pdf",
+        original_filename="blank.pdf",
+        file_type="pdf",
+        file_path="/tmp/blank.pdf",
+        file_size=1024,
+        extracted_text="   ",
+        page_count=1,
+        processing_status=PROCESSING_STATUS_COMPLETED,
+    )
+    db_session.add(mat)
+    await db_session.commit()
+
+    resp = await client.post(f"/courses/{course_id}/analysis", headers=auth_headers)
+
+    assert resp.status_code == 422
+    assert "No usable text" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_get_analysis_not_found_returns_404(
     client: AsyncClient,
     auth_headers: dict,

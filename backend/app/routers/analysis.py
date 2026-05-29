@@ -15,6 +15,7 @@ from app.models.material import Material, PROCESSING_STATUS_COMPLETED
 from app.models.user import User
 from app.schemas.analysis import AnalysisResponse, ConceptItem, ProfessorTerm, QuestionTypeDistribution
 from app.services import get_claude_service
+from app.services.material_quality import is_usable_extracted_text
 
 router = APIRouter(tags=["analysis"])
 claude_service = get_claude_service()
@@ -165,6 +166,20 @@ async def run_analysis(
             detail="No completed materials found. Please upload and wait for processing.",
         )
 
+    usable_materials = [
+        material
+        for material in completed_materials
+        if is_usable_extracted_text(material.extracted_text)
+    ]
+    if not usable_materials:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "No usable text found in completed materials. Upload a text-based "
+                "file or a clearer scan before analysis."
+            ),
+        )
+
     if course_id in _analysis_course_locks:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -174,7 +189,7 @@ async def run_analysis(
 
     materials_text = "\n\n---\n\n".join(
         f"[File: {m.original_filename}]\n{m.extracted_text or ''}"
-        for m in completed_materials
+        for m in usable_materials
     )
 
     return StreamingResponse(
