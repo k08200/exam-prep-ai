@@ -96,15 +96,16 @@ async def direct_user(db_session: AsyncSession):
     """Create and return a test user directly in DB."""
     from app.routers.auth import register
 
+    email = f"courseuser-{uuid.uuid4()}@example.com"
     result = await register(
-        UserCreate(email="courseuser@example.com", password="password123"),
+        UserCreate(email=email, password="password123"),
         db=db_session,
     )
     await db_session.flush()
 
     from sqlalchemy import select
     from app.models.user import User
-    row = await db_session.execute(select(User).where(User.email == "courseuser@example.com"))
+    row = await db_session.execute(select(User).where(User.email == email))
     return row.scalar_one()
 
 
