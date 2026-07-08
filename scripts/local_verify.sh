@@ -1,0 +1,80 @@
+#!/bin/sh
+set -eu
+
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+cd "$ROOT_DIR"
+
+log() {
+  printf '\n==> %s\n' "$1"
+}
+
+run_with_timeout() {
+  seconds="$1"
+  shift
+
+  "$@" &
+  command_pid="$!"
+
+  (
+    sleep "$seconds"
+    kill "$command_pid" 2>/dev/null || true
+  ) &
+  timer_pid="$!"
+
+  if wait "$command_pid"; then
+    status=0
+  else
+    status="$?"
+  fi
+
+  kill "$timer_pid" 2>/dev/null || true
+  wait "$timer_pid" 2>/dev/null || true
+
+  if [ "$status" -eq 143 ]; then
+    return 124
+  fi
+  return "$status"
+}
+
+log "Checking Docker daemon"
+if ! run_with_timeout 30 docker version >/dev/null 2>&1; then
+  printf 'Docker is not responding. Start or restart Docker Desktop, then run this script again.\n' >&2
+  exit 1
+fi
+
+log "Validating Docker Compose configuration"
+docker compose config --quiet
+
+log "Building backend and frontend images"
+docker compose build --progress=plain backend frontend
+
+log "Running backend test suite inside Docker"
+docker compose run --rm --no-deps backend python -m pytest tests/ -q --tb=short
+
+log "Starting local app stack"
+docker compose up -d db backend frontend
+
+log "Waiting for API readiness on http://127.0.0.1:8001/ready"
+i=0
+while [ "$i" -lt 60 ]; do
+  if curl -fsS http://127.0.0.1:8001/ready >/dev/null; then
+    break
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+
+if [ "$i" -ge 60 ]; then
+  docker compose logs --tail=120 backend
+  printf '\nBackend did not become ready within 60 seconds.\n' >&2
+  exit 1
+fi
+
+log "Running API smoke test against Docker backend"
+docker compose exec -T backend python scripts/e2e_smoke.py
+
+log "Checking frontend is reachable on http://127.0.0.1:3003"
+curl -fsS -I http://127.0.0.1:3003 >/dev/null
+
+log "Local verification passed"
+printf '\nFrontend: http://localhost:3003\nBackend:  http://localhost:8001\nDocs:     http://localhost:8001/docs\n'

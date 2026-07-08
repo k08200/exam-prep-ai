@@ -15,14 +15,14 @@ Hyper-personalized AI exam prep. Upload your lecture materials → AI learns you
 
 ### Prerequisites
 - Docker & Docker Compose
-- Anthropic API key
+- Anthropic API key only if you want real Claude output. Local development defaults to deterministic mock AI responses.
 
 ### Setup
 ```bash
 git clone <repo>
 cd exam-prep-ai
 cp .env.example .env
-# Edit .env and set ANTHROPIC_API_KEY=your-key-here
+# Optional: edit .env and set USE_MOCK_CLAUDE=false plus ANTHROPIC_API_KEY=your-key-here
 ```
 
 ### Run
@@ -35,6 +35,14 @@ App available at:
 - Backend API: http://localhost:8001
 - API Docs: http://localhost:8001/docs
 - Readiness: http://localhost:8001/ready
+
+### One-Command Local Verification
+To check the full local stack before relying on it for real study work:
+```bash
+./scripts/local_verify.sh
+```
+
+This validates Docker Compose, rebuilds the backend/frontend, runs the backend test suite, starts the local app, runs the API smoke flow, and confirms the frontend is reachable. It keeps your Docker volumes intact.
 
 ### Development With Hot Reload
 ```bash
@@ -157,6 +165,12 @@ E2E_API_URL=http://127.0.0.1:8000 python scripts/e2e_smoke.py
 ```
 
 The smoke test covers registration, login, course creation, material upload and retry, analysis streaming, exam generation, submission, and saved result retrieval.
+
+If you are using the root Docker Compose setup, the backend is exposed on port `8001`:
+```bash
+cd backend
+E2E_API_URL=http://127.0.0.1:8001 python scripts/e2e_smoke.py
+```
 
 To verify real Claude credentials and model configuration:
 ```bash

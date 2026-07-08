@@ -6,6 +6,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import os
 import time
@@ -15,6 +16,26 @@ import httpx
 
 
 API_URL = os.getenv("E2E_API_URL", "http://127.0.0.1:8000").rstrip("/")
+
+
+def _make_docx_bytes() -> bytes:
+    """Create a small real DOCX fixture so the smoke test exercises parsing."""
+    from docx import Document
+
+    doc = Document()
+    doc.add_heading("E2E Biology Lecture", level=1)
+    doc.add_paragraph(
+        "Photosynthesis converts light energy into chemical energy through "
+        "chloroplast reactions, while cellular respiration releases stored "
+        "energy through glycolysis, the Krebs cycle, and oxidative phosphorylation."
+    )
+    doc.add_paragraph(
+        "Mitosis and meiosis are central exam concepts because they compare "
+        "cell division outcomes, chromosome behavior, and genetic variation."
+    )
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
 
 
 def _sse_events(text: str) -> list[dict[str, Any]]:
@@ -86,15 +107,15 @@ async def main() -> None:
             f"/courses/{course_id}/materials",
             files={
                 "files": (
-                    "lecture.pdf",
-                    b"Photosynthesis, cellular respiration, mitosis, meiosis",
-                    "application/pdf",
+                    "lecture.docx",
+                    _make_docx_bytes(),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
             },
             headers=headers,
         )
         upload.raise_for_status()
-        await _wait_for_material(client, course_id, token, "lecture.pdf", {"completed"})
+        await _wait_for_material(client, course_id, token, "lecture.docx", {"completed"})
 
         bad_upload = await client.post(
             f"/courses/{course_id}/materials",
