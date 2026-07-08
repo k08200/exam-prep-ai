@@ -599,6 +599,77 @@ async def test_get_exam_result_before_submit_returns_409(
 
 
 @pytest.mark.asyncio
+async def test_get_other_user_exam_returns_403(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """GET /exams/{id} cannot read another user's exam."""
+    await client.post(
+        "/auth/register",
+        json={"email": "exam-reader-owner@example.com", "password": "password123"},
+    )
+    login_resp = await client.post(
+        "/auth/login",
+        data={"username": "exam-reader-owner@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+    course_resp = await client.post(
+        "/courses",
+        json={"name": "Private Exam Course"},
+        headers=owner_headers,
+    )
+    exam_id, _ = await _create_exam_with_questions(
+        client, owner_headers, course_resp.json()["id"], db_session
+    )
+
+    resp = await client.get(f"/exams/{exam_id}", headers=auth_headers)
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_other_user_exam_result_returns_403(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """GET /exams/{id}/result cannot read another user's grading details."""
+    await client.post(
+        "/auth/register",
+        json={"email": "exam-result-owner@example.com", "password": "password123"},
+    )
+    login_resp = await client.post(
+        "/auth/login",
+        data={"username": "exam-result-owner@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+    course_resp = await client.post(
+        "/courses",
+        json={"name": "Private Result Course"},
+        headers=owner_headers,
+    )
+    exam_id, q_ids = await _create_exam_with_questions(
+        client, owner_headers, course_resp.json()["id"], db_session
+    )
+
+    with patch(
+        "app.routers.exams.claude_service.grade_response",
+        new=AsyncMock(return_value=await _mock_grade_response(correct=True)),
+    ):
+        submit_resp = await client.post(
+            f"/exams/{exam_id}/submit",
+            json={"answers": [{"question_id": qid, "student_answer": "A"} for qid in q_ids]},
+            headers=owner_headers,
+        )
+    assert submit_resp.status_code == 200
+
+    resp = await client.get(f"/exams/{exam_id}/result", headers=auth_headers)
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_delete_exam_removes_exam(
     client: AsyncClient,
     auth_headers: dict,
@@ -674,6 +745,40 @@ async def test_submit_correct_answer(
     assert resp.status_code == 200
     result = resp.json()
     assert any(r["is_correct"] for r in result["results"])
+
+
+@pytest.mark.asyncio
+async def test_submit_other_user_exam_returns_403(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """POST /exams/{id}/submit cannot submit another user's exam."""
+    await client.post(
+        "/auth/register",
+        json={"email": "exam-submit-owner@example.com", "password": "password123"},
+    )
+    login_resp = await client.post(
+        "/auth/login",
+        data={"username": "exam-submit-owner@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+    course_resp = await client.post(
+        "/courses",
+        json={"name": "Private Submit Course"},
+        headers=owner_headers,
+    )
+    exam_id, q_ids = await _create_exam_with_questions(
+        client, owner_headers, course_resp.json()["id"], db_session
+    )
+
+    resp = await client.post(
+        f"/exams/{exam_id}/submit",
+        json={"answers": [{"question_id": q_ids[0], "student_answer": "A"}]},
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -946,6 +1051,35 @@ async def test_get_heatmap_after_exam(
     # Heatmap should be sorted weakest-first
     scores = [item["weakness_score"] for item in heatmap]
     assert scores == sorted(scores, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_get_other_user_heatmap_returns_403(
+    client: AsyncClient,
+    auth_headers: dict,
+) -> None:
+    """GET /courses/{id}/heatmap cannot read another user's course analytics."""
+    await client.post(
+        "/auth/register",
+        json={"email": "heatmap-owner@example.com", "password": "password123"},
+    )
+    login_resp = await client.post(
+        "/auth/login",
+        data={"username": "heatmap-owner@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+    course_resp = await client.post(
+        "/courses",
+        json={"name": "Private Heatmap Course"},
+        headers=owner_headers,
+    )
+
+    resp = await client.get(
+        f"/courses/{course_resp.json()['id']}/heatmap",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio

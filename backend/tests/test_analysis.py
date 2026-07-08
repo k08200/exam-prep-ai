@@ -314,6 +314,64 @@ async def test_get_analysis_not_found_returns_404(
 
 
 @pytest.mark.asyncio
+async def test_run_other_user_analysis_returns_403(
+    client: AsyncClient,
+    auth_headers: dict,
+) -> None:
+    """POST /courses/{id}/analysis cannot run analysis on another user's course."""
+    await client.post(
+        "/auth/register",
+        json={"email": "analysis-owner@example.com", "password": "password123"},
+    )
+    login_resp = await client.post(
+        "/auth/login",
+        data={"username": "analysis-owner@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+    course_resp = await client.post(
+        "/courses",
+        json={"name": "Private Analysis Course"},
+        headers=owner_headers,
+    )
+
+    resp = await client.post(
+        f"/courses/{course_resp.json()['id']}/analysis",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_other_user_analysis_returns_403(
+    client: AsyncClient,
+    auth_headers: dict,
+) -> None:
+    """GET /courses/{id}/analysis cannot read another user's analysis."""
+    await client.post(
+        "/auth/register",
+        json={"email": "analysis-reader-owner@example.com", "password": "password123"},
+    )
+    login_resp = await client.post(
+        "/auth/login",
+        data={"username": "analysis-reader-owner@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+    course_resp = await client.post(
+        "/courses",
+        json={"name": "Private Analysis Result Course"},
+        headers=owner_headers,
+    )
+
+    resp = await client.get(
+        f"/courses/{course_resp.json()['id']}/analysis",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_analysis_streaming_format(
     client: AsyncClient,
     auth_headers: dict,

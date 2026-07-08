@@ -365,6 +365,51 @@ async def test_list_materials(
 
 
 @pytest.mark.asyncio
+async def test_other_user_material_routes_return_403(
+    client: AsyncClient,
+    auth_headers: dict,
+) -> None:
+    """Material list/delete/retry endpoints cannot access another user's course."""
+    await client.post(
+        "/auth/register",
+        json={"email": "materials-owner@example.com", "password": "password123"},
+    )
+    login_resp = await client.post(
+        "/auth/login",
+        data={"username": "materials-owner@example.com", "password": "password123"},
+    )
+    owner_headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+    course_resp = await client.post(
+        "/courses",
+        json={"name": "Private Materials Course"},
+        headers=owner_headers,
+    )
+    course_id = course_resp.json()["id"]
+
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("private.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+            headers=owner_headers,
+        )
+    material_id = upload_resp.json()["materials"][0]["id"]
+
+    list_resp = await client.get(f"/courses/{course_id}/materials", headers=auth_headers)
+    delete_resp = await client.delete(
+        f"/courses/{course_id}/materials/{material_id}",
+        headers=auth_headers,
+    )
+    retry_resp = await client.post(
+        f"/courses/{course_id}/materials/{material_id}/retry",
+        headers=auth_headers,
+    )
+
+    assert list_resp.status_code == 403
+    assert delete_resp.status_code == 403
+    assert retry_resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_delete_material(
     client: AsyncClient, auth_headers: dict, test_course: dict
 ) -> None:
