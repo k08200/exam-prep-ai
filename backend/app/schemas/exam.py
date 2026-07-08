@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ExamCreate(BaseModel):
@@ -62,6 +62,12 @@ class StudentAnswerSubmit(BaseModel):
 
 class ExamSubmit(BaseModel):
     answers: list[StudentAnswerSubmit] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_at_least_one_answer(self) -> "ExamSubmit":
+        if not any(answer.student_answer.strip() for answer in self.answers):
+            raise ValueError("Submit at least one answer before grading.")
+        return self
 
 
 class QuestionResult(BaseModel):

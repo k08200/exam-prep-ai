@@ -38,7 +38,16 @@ run_with_timeout() {
 
 log "Checking Docker daemon"
 if ! run_with_timeout 30 docker version >/dev/null 2>&1; then
-  printf 'Docker is not responding. Start or restart Docker Desktop, then run this script again.\n' >&2
+  cat >&2 <<'EOF'
+Docker is not responding.
+
+Try this, then run ./scripts/local_verify.sh again:
+  1. Open or restart Docker Desktop.
+  2. Wait until Docker Desktop says it is running.
+  3. Confirm the daemon responds with: docker version
+
+This script does not remove project volumes, so your local study data is preserved.
+EOF
   exit 1
 fi
 

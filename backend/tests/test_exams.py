@@ -847,6 +847,33 @@ async def test_submit_empty_answers_returns_422(
 
 
 @pytest.mark.asyncio
+async def test_submit_all_blank_answers_returns_422(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """At least one submitted answer must contain text."""
+    course_id = test_course["id"]
+    exam_id, q_ids = await _create_exam_with_questions(
+        client, auth_headers, course_id, db_session
+    )
+
+    resp = await client.post(
+        f"/exams/{exam_id}/submit",
+        json={
+            "answers": [
+                {"question_id": qid, "student_answer": "   "}
+                for qid in q_ids
+            ]
+        },
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_submit_draft_exam_returns_409(
     client: AsyncClient,
     auth_headers: dict,

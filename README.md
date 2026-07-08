@@ -44,6 +44,8 @@ To check the full local stack before relying on it for real study work:
 
 This validates Docker Compose, rebuilds the backend/frontend, runs the backend test suite, starts the local app, runs the API smoke flow, and confirms the frontend is reachable. It keeps your Docker volumes intact.
 
+If verification stops at `Docker is not responding`, open or restart Docker Desktop, wait until it reports that it is running, confirm `docker version` returns normally, then run the script again.
+
 ### Development With Hot Reload
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build

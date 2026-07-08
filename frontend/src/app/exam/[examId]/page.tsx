@@ -75,6 +75,7 @@ export default function ExamPage() {
   }, [questions, answers]);
 
   const allAnswered = answeredCount === questions.length && questions.length > 0;
+  const canSubmit = answeredCount > 0 && questions.length > 0;
 
   const handleAnswerChange = (questionId: string, value: string) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
@@ -353,6 +354,11 @@ export default function ExamPage() {
               <span className="font-semibold text-gray-900">{answeredCount}</span>
               <span className="text-gray-500"> of {questions.length} answered</span>
             </div>
+            {answeredCount === 0 && questions.length > 0 && (
+              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                Answer at least one question
+              </span>
+            )}
             {!allAnswered && answeredCount > 0 && (
               <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
                 {questions.length - answeredCount} unanswered
@@ -370,7 +376,8 @@ export default function ExamPage() {
           <Button
             onClick={() => setShowConfirmDialog(true)}
             loading={isSubmitting}
-            disabled={questions.length === 0}
+            disabled={!canSubmit}
+            title={!canSubmit ? 'Answer at least one question before submitting' : undefined}
             size="md"
           >
             <Send className="h-4 w-4" />
