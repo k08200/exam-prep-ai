@@ -274,10 +274,11 @@ async def upload_materials(
             path.unlink(missing_ok=True)
         raise
 
+    await _invalidate_course_analysis(course_id, db)
+    await db.commit()
+
     for material_id, file_path, file_type in parse_tasks:
         background_tasks.add_task(_parse_and_update, material_id, file_path, file_type)
-
-    await _invalidate_course_analysis(course_id, db)
 
     responses = [MaterialResponse.model_validate(m) for m in created_materials]
     return MaterialUploadResponse(materials=responses, total_size=total_size)
@@ -348,6 +349,7 @@ async def retry_material_processing(
     await _invalidate_course_analysis(course_id, db)
     await db.flush()
     await db.refresh(material)
+    await db.commit()
 
     background_tasks.add_task(
         _parse_and_update,
@@ -386,3 +388,4 @@ async def delete_material(
 
     await _invalidate_course_analysis(course_id, db)
     await db.delete(material)
+    await db.commit()

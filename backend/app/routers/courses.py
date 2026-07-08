@@ -155,3 +155,4 @@ async def delete_course(
         Path(file_path).unlink(missing_ok=True)
 
     await db.delete(course)
+    await db.commit()

@@ -111,7 +111,10 @@ async def _analysis_exists(db: AsyncSession, course_id: uuid.UUID) -> bool:
 
 @pytest.mark.asyncio
 async def test_upload_pdf_success(
-    client: AsyncClient, auth_headers: dict, test_course: dict
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
 ) -> None:
     """Uploading a PDF to an owned course returns 201 with material metadata."""
     course_id = test_course["id"]
@@ -133,6 +136,12 @@ async def test_upload_pdf_success(
     assert mat["processing_status"] == "pending"
     assert mat["processing_error"] is None
     assert data["total_size"] == len(pdf_bytes)
+
+    await db_session.rollback()
+    result = await db_session.execute(
+        select(Material).where(Material.id == uuid.UUID(mat["id"]))
+    )
+    assert result.scalar_one_or_none() is not None
 
 
 @pytest.mark.asyncio
@@ -411,7 +420,10 @@ async def test_other_user_material_routes_return_403(
 
 @pytest.mark.asyncio
 async def test_delete_material(
-    client: AsyncClient, auth_headers: dict, test_course: dict
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
 ) -> None:
     """Deleting a material removes it from the listing."""
     course_id = test_course["id"]
@@ -430,6 +442,7 @@ async def test_delete_material(
     )
     assert del_resp.status_code == 204
 
+    await db_session.rollback()
     list_resp = await client.get(f"/courses/{course_id}/materials", headers=auth_headers)
     ids = [m["id"] for m in list_resp.json()]
     assert material_id not in ids
@@ -616,6 +629,12 @@ async def test_retry_failed_material_resets_status(
     assert data["processing_status"] == PROCESSING_STATUS_PENDING
     assert data["processing_error"] is None
     assert parser_mock.await_count == 1
+
+    await db_session.rollback()
+    result = await db_session.execute(select(Material).where(Material.id == uuid.UUID(material_id)))
+    material = result.scalar_one()
+    assert material.processing_status == PROCESSING_STATUS_PENDING
+    assert material.processing_error is None
 
 
 @pytest.mark.asyncio
