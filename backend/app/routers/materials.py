@@ -42,22 +42,22 @@ UPLOAD_CHUNK_SIZE = 1024 * 1024
 EXTENSION_TO_TYPE: dict[str, str] = {
     ".pdf": "pdf",
     ".pptx": "pptx",
-    ".ppt": "pptx",
     ".docx": "docx",
-    ".doc": "docx",
     ".png": "image",
     ".jpg": "image",
     ".jpeg": "image",
 }
+LEGACY_OFFICE_EXTENSIONS: dict[str, str] = {
+    ".ppt": "Legacy .ppt files are not supported. Convert the file to .pptx and upload again.",
+    ".doc": "Legacy .doc files are not supported. Convert the file to .docx and upload again.",
+}
 GENERIC_UPLOAD_MIME_TYPES = {"", "application/octet-stream", "binary/octet-stream"}
 EXTENSION_TO_MIME_TYPES: dict[str, set[str]] = {
     ".pdf": {"application/pdf"},
-    ".ppt": {"application/vnd.ms-powerpoint"},
     ".pptx": {
         "application/vnd.ms-powerpoint",
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     },
-    ".doc": {"application/msword"},
     ".docx": {
         "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -231,6 +231,11 @@ async def upload_materials(
     for upload_file in files:
         original_filename = upload_file.filename or "unknown"
         ext = Path(original_filename).suffix.lower()
+        if ext in LEGACY_OFFICE_EXTENSIONS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=LEGACY_OFFICE_EXTENSIONS[ext],
+            )
         if ext not in settings.ALLOWED_EXTENSIONS:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

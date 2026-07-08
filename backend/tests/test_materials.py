@@ -195,6 +195,35 @@ async def test_upload_invalid_extension_fails(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("filename", "content_type", "expected_extension"),
+    [
+        ("slides.ppt", "application/vnd.ms-powerpoint", ".pptx"),
+        ("notes.doc", "application/msword", ".docx"),
+    ],
+)
+async def test_upload_legacy_office_files_fail_with_conversion_hint(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    filename: str,
+    content_type: str,
+    expected_extension: str,
+) -> None:
+    """Legacy Office formats are rejected with a clear conversion hint."""
+    course_id = test_course["id"]
+    resp = await client.post(
+        f"/courses/{course_id}/materials",
+        files={"files": (filename, b"legacy binary data", content_type)},
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 422
+    assert "legacy" in resp.json()["detail"].lower()
+    assert expected_extension in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_upload_mismatched_content_type_fails(
     client: AsyncClient, auth_headers: dict, test_course: dict
 ) -> None:

@@ -3,7 +3,7 @@
 Hyper-personalized AI exam prep. Upload your lecture materials → AI learns your professor's exam style → generates unlimited style-matched mock exams.
 
 ## Features
-- Upload syllabus, lecture slides, past exams (PDF, PPT, DOCX, images)
+- Upload syllabus, lecture slides, past exams (PDF, PPTX, DOCX, images)
 - AI analyzes professor's style using Claude Opus 4.1 with extended thinking
 - Generates unlimited mock exams matching your professor's exact style
 - Real-time scoring + professor-perspective explanations

@@ -29,6 +29,15 @@ test.describe('core browser flow', () => {
     await expect(page.getByRole('heading', { name: 'Browser E2E Biology' })).toBeVisible();
     await page.getByRole('button', { name: /upload files/i }).click();
     await page.locator('input[type="file"]').setInputFiles({
+      name: 'legacy-notes.doc',
+      mimeType: 'application/msword',
+      buffer: Buffer.from('legacy doc'),
+    });
+    await expect(page.getByText(/legacy \.doc files are not supported/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /^upload$/i })).toBeDisabled();
+    await page.getByRole('button', { name: /clear all/i }).click();
+
+    await page.locator('input[type="file"]').setInputFiles({
       name: 'misleading.pdf',
       mimeType: 'image/png',
       buffer: Buffer.from('not a pdf'),

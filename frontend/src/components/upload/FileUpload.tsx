@@ -19,22 +19,24 @@ const ACCEPTED_TYPES = [
   'application/pdf',
   'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'image/png',
   'image/jpeg',
 ];
 
-const ACCEPTED_EXTENSIONS = ['.pdf', '.ppt', '.pptx', '.docx', '.doc', '.png', '.jpg', '.jpeg'];
+const ACCEPTED_EXTENSIONS = ['.pdf', '.pptx', '.docx', '.png', '.jpg', '.jpeg'];
+const LEGACY_OFFICE_EXTENSIONS: Record<string, string> = {
+  '.ppt': 'Legacy .ppt files are not supported. Convert to .pptx and upload again.',
+  '.doc': 'Legacy .doc files are not supported. Convert to .docx and upload again.',
+};
 const GENERIC_FILE_TYPES = ['', 'application/octet-stream', 'binary/octet-stream'];
 const EXTENSION_TO_TYPES: Record<string, string[]> = {
   '.pdf': ['application/pdf'],
-  '.ppt': ['application/vnd.ms-powerpoint'],
   '.pptx': [
     'application/vnd.ms-powerpoint',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   ],
-  '.doc': ['application/msword'],
   '.docx': [
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -94,6 +96,13 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
       return `File exceeds 50MB limit (${formatFileSize(file.size)})`;
     }
     const lowerName = file.name.toLowerCase();
+    const legacyExtension = Object.keys(LEGACY_OFFICE_EXTENSIONS).find((ext) =>
+      lowerName.endsWith(ext)
+    );
+    if (legacyExtension) {
+      return LEGACY_OFFICE_EXTENSIONS[legacyExtension];
+    }
+
     const extension = ACCEPTED_EXTENSIONS.find((ext) => lowerName.endsWith(ext));
     if (!extension) {
       return 'Unsupported file type';
@@ -268,12 +277,12 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
               {isDragging ? 'Drop files here' : 'Drag & drop files or click to browse'}
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              PDF, PPT, PPTX, DOCX, DOC, PNG, JPG. Up to {MAX_UPLOAD_FILES} files,
+              PDF, PPTX, DOCX, PNG, JPG. Up to {MAX_UPLOAD_FILES} files,
               50MB each
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-1.5">
-            {['PDF', 'PPT', 'PPTX', 'DOCX', 'DOC', 'PNG', 'JPG'].map((ext) => (
+            {['PDF', 'PPTX', 'DOCX', 'PNG', 'JPG'].map((ext) => (
               <span
                 key={ext}
                 className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded font-mono"

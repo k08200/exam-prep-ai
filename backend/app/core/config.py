@@ -24,9 +24,7 @@ class Settings(BaseSettings):
     ALLOWED_EXTENSIONS: Set[str] = {
         ".pdf",
         ".pptx",
-        ".ppt",
         ".docx",
-        ".doc",
         ".png",
         ".jpg",
         ".jpeg",
