@@ -26,6 +26,23 @@ const ACCEPTED_TYPES = [
 ];
 
 const ACCEPTED_EXTENSIONS = ['.pdf', '.ppt', '.pptx', '.docx', '.doc', '.png', '.jpg', '.jpeg'];
+const GENERIC_FILE_TYPES = ['', 'application/octet-stream', 'binary/octet-stream'];
+const EXTENSION_TO_TYPES: Record<string, string[]> = {
+  '.pdf': ['application/pdf'],
+  '.ppt': ['application/vnd.ms-powerpoint'],
+  '.pptx': [
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ],
+  '.doc': ['application/msword'],
+  '.docx': [
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ],
+  '.png': ['image/png'],
+  '.jpg': ['image/jpeg'],
+  '.jpeg': ['image/jpeg'],
+};
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const MAX_UPLOAD_FILES = 10;
 
@@ -76,13 +93,21 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
     if (file.size > MAX_FILE_SIZE) {
       return `File exceeds 50MB limit (${formatFileSize(file.size)})`;
     }
-    const isValidType = ACCEPTED_TYPES.includes(file.type);
-    const isValidExt = ACCEPTED_EXTENSIONS.some((ext) =>
-      file.name.toLowerCase().endsWith(ext)
-    );
-    if (!isValidType && !isValidExt) {
+    const lowerName = file.name.toLowerCase();
+    const extension = ACCEPTED_EXTENSIONS.find((ext) => lowerName.endsWith(ext));
+    if (!extension) {
       return 'Unsupported file type';
     }
+
+    const fileType = file.type.toLowerCase();
+    if (GENERIC_FILE_TYPES.includes(fileType)) return null;
+    if (!ACCEPTED_TYPES.includes(fileType)) return 'Unsupported file type';
+
+    const expectedTypes = EXTENSION_TO_TYPES[extension] || [];
+    if (expectedTypes.length > 0 && !expectedTypes.includes(fileType)) {
+      return `File type does not match the ${extension} extension`;
+    }
+
     return null;
   };
 
@@ -137,6 +162,7 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
     (e: ChangeEvent<HTMLInputElement>) => {
       if (e.target.files) {
         addFiles(Array.from(e.target.files));
+        e.target.value = '';
       }
     },
     [addFiles]
@@ -333,7 +359,10 @@ export function FileUpload({ courseId, onSuccess, onError }: FileUploadProps) {
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => setSelectedFiles([])}
+              onClick={() => {
+                setSelectedFiles([]);
+                if (inputRef.current) inputRef.current.value = '';
+              }}
               disabled={isUploading}
             >
               Clear All

@@ -29,6 +29,15 @@ test.describe('core browser flow', () => {
     await expect(page.getByRole('heading', { name: 'Browser E2E Biology' })).toBeVisible();
     await page.getByRole('button', { name: /upload files/i }).click();
     await page.locator('input[type="file"]').setInputFiles({
+      name: 'misleading.pdf',
+      mimeType: 'image/png',
+      buffer: Buffer.from('not a pdf'),
+    });
+    await expect(page.getByText(/does not match the \.pdf extension/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /^upload$/i })).toBeDisabled();
+    await page.getByRole('button', { name: /clear all/i }).click();
+
+    await page.locator('input[type="file"]').setInputFiles({
       name: 'browser-e2e.pdf',
       mimeType: 'application/pdf',
       buffer: Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n'),
