@@ -403,6 +403,7 @@ async def delete_exam(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     await db.delete(exam)
+    await db.commit()
 
 
 @router.post("/exams/{exam_id}/submit", response_model=ExamResult)

@@ -685,6 +685,7 @@ async def test_delete_exam_removes_exam(
     resp = await client.delete(f"/exams/{exam_id}", headers=auth_headers)
 
     assert resp.status_code == 204
+    await db_session.rollback()
     get_resp = await client.get(f"/exams/{exam_id}", headers=auth_headers)
     assert get_resp.status_code == 404
 

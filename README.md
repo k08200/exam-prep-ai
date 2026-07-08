@@ -16,6 +16,7 @@ Hyper-personalized AI exam prep. Upload your lecture materials → AI learns you
 ### Prerequisites
 - Docker & Docker Compose
 - Anthropic API key only if you want real Claude output. Local development defaults to deterministic mock AI responses.
+- Python 3.10+ and Node.js 20+ if you run backend/frontend directly without Docker.
 
 ### Setup
 ```bash
@@ -209,7 +210,7 @@ npm run dev
 | Variable | Description | Required |
 |----------|-------------|----------|
 | ENVIRONMENT | Runtime mode (`development` or `production`) | No (default: development) |
-| ANTHROPIC_API_KEY | Your Anthropic API key | Yes |
+| ANTHROPIC_API_KEY | Your Anthropic API key | Only when `USE_MOCK_CLAUDE=false` |
 | DATABASE_URL | PostgreSQL connection string | Yes |
 | SECRET_KEY | JWT secret (32+ chars) | Yes |
 | USE_MOCK_CLAUDE | Use deterministic mock AI responses | No (default in Docker: true) |
