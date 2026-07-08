@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ExamCreate(BaseModel):
@@ -9,6 +9,8 @@ class ExamCreate(BaseModel):
     question_count: int = Field(ge=1, le=100)
     mode: str = Field(default="standard", pattern="^(standard|cram)$")
     topics: list[str] | None = None
+
+    model_config = ConfigDict(str_strip_whitespace=True)
 
 
 class MultipleChoiceOption(BaseModel):
@@ -55,11 +57,11 @@ class ExamDetailResponse(ExamResponse):
 
 class StudentAnswerSubmit(BaseModel):
     question_id: uuid.UUID
-    student_answer: str = ""
+    student_answer: str = Field(default="", max_length=10000)
 
 
 class ExamSubmit(BaseModel):
-    answers: list[StudentAnswerSubmit]
+    answers: list[StudentAnswerSubmit] = Field(min_length=1)
 
 
 class QuestionResult(BaseModel):

@@ -394,6 +394,27 @@ async def test_create_exam_without_analysis_fails(
     assert "analysis" in resp.json()["detail"].lower()
 
 
+@pytest.mark.asyncio
+async def test_create_exam_blank_title_returns_422(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Exam titles must contain non-whitespace text."""
+    course_id = test_course["id"]
+    await _create_analysis(db_session, uuid.UUID(course_id))
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/courses/{course_id}/exams",
+        json={"title": "   ", "question_count": 2, "mode": "standard"},
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 422
+
+
 # ---------------------------------------------------------------------------
 # Submission and grading tests
 # ---------------------------------------------------------------------------
@@ -749,6 +770,28 @@ async def test_submit_unknown_question_returns_422(
 
 
 @pytest.mark.asyncio
+async def test_submit_empty_answers_returns_422(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Submission payloads must include at least one answer."""
+    course_id = test_course["id"]
+    exam_id, _ = await _create_exam_with_questions(
+        client, auth_headers, course_id, db_session
+    )
+
+    resp = await client.post(
+        f"/exams/{exam_id}/submit",
+        json={"answers": []},
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_submit_draft_exam_returns_409(
     client: AsyncClient,
     auth_headers: dict,
@@ -775,7 +818,7 @@ async def test_submit_draft_exam_returns_409(
 
     resp = await client.post(
         f"/exams/{exam.id}/submit",
-        json={"answers": []},
+        json={"answers": [{"question_id": str(uuid.uuid4()), "student_answer": "A"}]},
         headers=auth_headers,
     )
 
