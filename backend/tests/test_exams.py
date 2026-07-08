@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis import ProfessorAnalysis
 from app.models.exam import ConceptTracking, Exam, ExamQuestion
+from app.schemas.exam import ExamCreate
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +370,60 @@ async def test_create_exam_stream_timeout_rolls_back_draft(
     assert events[-1]["retryable"] is True
 
     result = await db_session.execute(select(Exam).where(Exam.title == "Timeout Exam"))
+    assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_exam_generation_cancel_rolls_back_draft(
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Client cancellation during generation must not leave a draft exam behind."""
+    from app.models.course import Course
+    from app.models.exam import EXAM_STATUS_DRAFT
+    from app.routers.exams import _stream_exam_generation
+
+    course_id = uuid.UUID(test_course["id"])
+    analysis = await _create_analysis(db_session, course_id)
+    await db_session.commit()
+
+    course_result = await db_session.execute(select(Course).where(Course.id == course_id))
+    course = course_result.scalar_one()
+    exam = Exam(
+        course_id=course.id,
+        user_id=course.user_id,
+        title="Cancelled Exam",
+        mode="standard",
+        question_count=2,
+        status=EXAM_STATUS_DRAFT,
+    )
+    db_session.add(exam)
+    await db_session.flush()
+    exam_id = exam.id
+
+    exam_create = ExamCreate(title="Cancelled Exam", question_count=2, mode="standard")
+
+    async def cancelled_generation(*args, **kwargs):
+        yield {"type": "question", "question": MOCK_QUESTIONS[0], "tokens": 100}
+        raise asyncio.CancelledError()
+
+    with patch(
+        "app.routers.exams.claude_service.generate_exam_questions",
+        return_value=cancelled_generation(),
+    ):
+        stream = _stream_exam_generation(
+            exam=exam,
+            course=course,
+            analysis=analysis,
+            exam_create=exam_create,
+            db=db_session,
+            lock_course_id=course_id,
+        )
+        with pytest.raises(asyncio.CancelledError):
+            async for _ in stream:
+                pass
+
+    result = await db_session.execute(select(Exam).where(Exam.id == exam_id))
     assert result.scalar_one_or_none() is None
 
 

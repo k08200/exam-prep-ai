@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from typing import AsyncGenerator
 
@@ -136,6 +137,9 @@ async def _stream_analysis(
                 "thinking_tokens": thinking_tokens,
             }
         )
+    except asyncio.CancelledError:
+        await db.rollback()
+        raise
     finally:
         _analysis_course_locks.discard(lock_course_id)
 

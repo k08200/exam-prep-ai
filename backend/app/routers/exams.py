@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
@@ -209,6 +210,9 @@ async def _stream_exam_generation(
                 "question_count": question_number - 1,
             }
         )
+    except asyncio.CancelledError:
+        await db.rollback()
+        raise
     finally:
         _exam_generation_course_locks.discard(lock_course_id)
 
