@@ -4,6 +4,17 @@ set -eu
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
+BACKEND_PORT="${BACKEND_PORT:-8001}"
+FRONTEND_PORT="${FRONTEND_PORT:-3003}"
+if [ -z "${NEXT_PUBLIC_API_URL:-}" ]; then
+  NEXT_PUBLIC_API_URL="http://localhost:${BACKEND_PORT}"
+  export NEXT_PUBLIC_API_URL
+fi
+if [ -z "${CORS_ORIGINS:-}" ]; then
+  CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:3000,http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}"
+  export CORS_ORIGINS
+fi
+
 log() {
   printf '\n==> %s\n' "$1"
 }
@@ -99,8 +110,8 @@ log "Validating Docker Compose configuration"
 docker compose config --quiet
 
 log "Checking local ports"
-check_port_available 8001 exam-prep-ai-backend-1 "the backend API"
-check_port_available 3003 exam-prep-ai-frontend-1 "the frontend"
+check_port_available "$BACKEND_PORT" exam-prep-ai-backend-1 "the backend API"
+check_port_available "$FRONTEND_PORT" exam-prep-ai-frontend-1 "the frontend"
 
 log "Building backend and frontend images"
 docker compose build --progress=plain backend frontend
@@ -111,10 +122,10 @@ docker compose run --rm --no-deps backend python -m pytest tests/ -q --tb=short
 log "Starting local app stack"
 docker compose up -d db backend frontend
 
-log "Waiting for API readiness on http://127.0.0.1:8001/ready"
+log "Waiting for API readiness on http://127.0.0.1:${BACKEND_PORT}/ready"
 i=0
 while [ "$i" -lt 60 ]; do
-  if curl -fsS http://127.0.0.1:8001/ready >/dev/null; then
+  if curl -fsS "http://127.0.0.1:${BACKEND_PORT}/ready" >/dev/null; then
     break
   fi
   i=$((i + 1))
@@ -130,8 +141,8 @@ fi
 log "Running API smoke test against Docker backend"
 docker compose exec -T backend python scripts/e2e_smoke.py
 
-log "Checking frontend is reachable on http://127.0.0.1:3003"
-curl -fsS -I http://127.0.0.1:3003 >/dev/null
+log "Checking frontend is reachable on http://127.0.0.1:${FRONTEND_PORT}"
+curl -fsS -I "http://127.0.0.1:${FRONTEND_PORT}" >/dev/null
 
 log "Local verification passed"
-printf '\nFrontend: http://localhost:3003\nBackend:  http://localhost:8001\nDocs:     http://localhost:8001/docs\n'
+printf '\nFrontend: http://localhost:%s\nBackend:  http://localhost:%s\nDocs:     http://localhost:%s/docs\n' "$FRONTEND_PORT" "$BACKEND_PORT" "$BACKEND_PORT"

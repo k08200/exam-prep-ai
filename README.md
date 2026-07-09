@@ -37,6 +37,11 @@ App available at:
 - API Docs: http://localhost:8001/docs
 - Readiness: http://localhost:8001/ready
 
+If one of those ports is already in use, override the host ports:
+```bash
+BACKEND_PORT=8011 FRONTEND_PORT=3013 NEXT_PUBLIC_API_URL=http://localhost:8011 docker compose up --build
+```
+
 ### One-Command Local Verification
 To check the full local stack before relying on it for real study work:
 ```bash
@@ -46,6 +51,11 @@ To check the full local stack before relying on it for real study work:
 This validates Docker Compose, rebuilds the backend/frontend, runs the backend test suite, starts the local app, runs the API smoke flow, and confirms the frontend is reachable. It keeps your Docker volumes intact.
 
 If verification stops at `Docker is not responding`, open or restart Docker Desktop, wait until it reports that it is running, confirm `docker version` returns normally, then run the script again.
+
+If another app already uses the default local ports, run verification on alternate ports:
+```bash
+BACKEND_PORT=8011 FRONTEND_PORT=3013 ./scripts/local_verify.sh
+```
 
 ### Development With Hot Reload
 ```bash
@@ -214,6 +224,9 @@ npm run dev
 | DATABASE_URL | PostgreSQL connection string | Yes |
 | SECRET_KEY | JWT secret (32+ chars) | Yes |
 | USE_MOCK_CLAUDE | Use deterministic mock AI responses | No (default in Docker: true) |
+| BACKEND_PORT | Host port for Docker backend | No (default: 8001) |
+| FRONTEND_PORT | Host port for Docker frontend | No (default: 3003) |
+| POSTGRES_PORT | Host port for Docker Postgres | No (default: 5434) |
 | RUN_MIGRATIONS | Run Alembic before backend startup | No (default: true) |
 | AUTO_CREATE_TABLES | Fallback SQLAlchemy table creation | No (default in Docker: false) |
 | CORS_ORIGINS | Comma-separated frontend origins allowed by the API | No (local defaults) |
