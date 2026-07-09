@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from typing import AsyncGenerator
 
@@ -7,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal, get_db
 from app.core.security import get_current_user
 from app.core.sse import iter_with_heartbeat, sse_event
 from app.models.analysis import ProfessorAnalysis
@@ -36,9 +35,10 @@ async def _assert_course_ownership(
 
 
 async def _stream_analysis(
-    course: Course,
+    course_id: uuid.UUID,
+    course_name: str,
+    professor_name: str,
     materials_text: str,
-    db: AsyncSession,
     lock_course_id: uuid.UUID,
 ) -> AsyncGenerator[str, None]:
     """Internal generator: stream SSE events for professor analysis."""
@@ -52,8 +52,8 @@ async def _stream_analysis(
             yield sse_event({"type": "heartbeat"})
             async for event in iter_with_heartbeat(
                 claude_service.analyze_professor_style(
-                    course_name=course.name,
-                    professor_name=course.professor_name or "Unknown Professor",
+                    course_name=course_name,
+                    professor_name=professor_name,
                     materials_text=materials_text,
                 )
             ):
@@ -93,53 +93,55 @@ async def _stream_analysis(
             )
             return
 
-        # Persist / upsert analysis to DB
-        existing_result = await db.execute(
-            select(ProfessorAnalysis).where(ProfessorAnalysis.course_id == course.id)
-        )
-        existing = existing_result.scalar_one_or_none()
-
         raw_text = "".join(raw_text_parts)
 
-        if existing is not None:
-            existing.top_concepts = final_analysis.get("top_concepts", [])
-            existing.question_types = final_analysis.get("question_types", {})
-            existing.topic_distribution = final_analysis.get("topic_distribution", {})
-            existing.professor_terms = final_analysis.get("professor_terms", [])
-            existing.exam_patterns = final_analysis.get("exam_patterns", {})
-            existing.raw_analysis = raw_text
-            existing.thinking_tokens_used = thinking_tokens
-            existing.total_tokens_used = total_tokens
-            analysis_record = existing
-        else:
-            analysis_record = ProfessorAnalysis(
-                course_id=course.id,
-                top_concepts=final_analysis.get("top_concepts", []),
-                question_types=final_analysis.get("question_types", {}),
-                topic_distribution=final_analysis.get("topic_distribution", {}),
-                professor_terms=final_analysis.get("professor_terms", []),
-                exam_patterns=final_analysis.get("exam_patterns", {}),
-                raw_analysis=raw_text,
-                thinking_tokens_used=thinking_tokens,
-                total_tokens_used=total_tokens,
-            )
-            db.add(analysis_record)
+        async with AsyncSessionLocal() as db:
+            try:
+                existing_result = await db.execute(
+                    select(ProfessorAnalysis).where(ProfessorAnalysis.course_id == course_id)
+                )
+                existing = existing_result.scalar_one_or_none()
 
-        await db.commit()
-        await db.refresh(analysis_record)
+                if existing is not None:
+                    existing.top_concepts = final_analysis.get("top_concepts", [])
+                    existing.question_types = final_analysis.get("question_types", {})
+                    existing.topic_distribution = final_analysis.get("topic_distribution", {})
+                    existing.professor_terms = final_analysis.get("professor_terms", [])
+                    existing.exam_patterns = final_analysis.get("exam_patterns", {})
+                    existing.raw_analysis = raw_text
+                    existing.thinking_tokens_used = thinking_tokens
+                    existing.total_tokens_used = total_tokens
+                    analysis_record = existing
+                else:
+                    analysis_record = ProfessorAnalysis(
+                        course_id=course_id,
+                        top_concepts=final_analysis.get("top_concepts", []),
+                        question_types=final_analysis.get("question_types", {}),
+                        topic_distribution=final_analysis.get("topic_distribution", {}),
+                        professor_terms=final_analysis.get("professor_terms", []),
+                        exam_patterns=final_analysis.get("exam_patterns", {}),
+                        raw_analysis=raw_text,
+                        thinking_tokens_used=thinking_tokens,
+                        total_tokens_used=total_tokens,
+                    )
+                    db.add(analysis_record)
+
+                await db.commit()
+                await db.refresh(analysis_record)
+                analysis_id = analysis_record.id
+            except Exception:
+                await db.rollback()
+                raise
 
         yield sse_event(
             {
                 "type": "complete",
                 "content": "Analysis complete",
-                "analysis_id": str(analysis_record.id),
+                "analysis_id": str(analysis_id),
                 "tokens_used": total_tokens,
                 "thinking_tokens": thinking_tokens,
             }
         )
-    except asyncio.CancelledError:
-        await db.rollback()
-        raise
     finally:
         _analysis_course_locks.discard(lock_course_id)
 
@@ -195,9 +197,11 @@ async def run_analysis(
         f"[File: {m.original_filename}]\n{m.extracted_text or ''}"
         for m in usable_materials
     )
+    course_name = course.name
+    professor_name = course.professor_name or "Unknown Professor"
 
     return StreamingResponse(
-        _stream_analysis(course, materials_text, db, course_id),
+        _stream_analysis(course_id, course_name, professor_name, materials_text, course_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal, get_db
 from app.core.security import get_current_user
 from app.core.sse import iter_with_heartbeat
 from app.models.analysis import ProfessorAnalysis
@@ -87,14 +87,41 @@ async def _discard_draft_exam(db: AsyncSession, exam_id: uuid.UUID) -> None:
 
 
 async def _stream_exam_generation(
-    exam: Exam,
-    course: Course,
-    analysis: ProfessorAnalysis,
+    exam_id: uuid.UUID,
+    user_id: uuid.UUID,
+    course_id: uuid.UUID,
+    course_name: str,
+    analysis_data: dict,
     exam_create: ExamCreate,
-    db: AsyncSession,
     lock_course_id: uuid.UUID,
 ) -> AsyncGenerator[str, None]:
     """Stream question generation via SSE, persisting each question as it arrives."""
+    try:
+        async with AsyncSessionLocal() as db:
+            async for event in _stream_exam_generation_with_session(
+                db=db,
+                exam_id=exam_id,
+                user_id=user_id,
+                course_id=course_id,
+                course_name=course_name,
+                analysis_data=analysis_data,
+                exam_create=exam_create,
+            ):
+                yield event
+    finally:
+        _exam_generation_course_locks.discard(lock_course_id)
+
+
+async def _stream_exam_generation_with_session(
+    db: AsyncSession,
+    exam_id: uuid.UUID,
+    user_id: uuid.UUID,
+    course_id: uuid.UUID,
+    course_name: str,
+    analysis_data: dict,
+    exam_create: ExamCreate,
+) -> AsyncGenerator[str, None]:
+    """Run exam generation against a session owned by the stream lifecycle."""
     total_tokens = 0
     question_number = 1
 
@@ -104,8 +131,8 @@ async def _stream_exam_generation(
         if exam_create.mode == "cram" and not topics:
             user_concepts_result = await db.execute(
                 select(ConceptTracking).where(
-                    ConceptTracking.user_id == exam.user_id,
-                    ConceptTracking.course_id == exam.course_id,
+                    ConceptTracking.user_id == user_id,
+                    ConceptTracking.course_id == course_id,
                 ).order_by(ConceptTracking.weakness_score.desc())
             )
             user_concepts = [
@@ -114,8 +141,8 @@ async def _stream_exam_generation(
             ]
             topics = await analytics_service.get_cram_topics(
                 analysis={
-                    "top_concepts": analysis.top_concepts,
-                    "topic_distribution": analysis.topic_distribution,
+                    "top_concepts": analysis_data["top_concepts"],
+                    "topic_distribution": analysis_data["topic_distribution"],
                 },
                 user_concepts=user_concepts,
             )
@@ -124,14 +151,8 @@ async def _stream_exam_generation(
             yield _sse_event({"type": "heartbeat"})
             async for event in iter_with_heartbeat(
                 claude_service.generate_exam_questions(
-                    course_name=course.name,
-                    analysis={
-                        "top_concepts": analysis.top_concepts,
-                        "question_types": analysis.question_types,
-                        "topic_distribution": analysis.topic_distribution,
-                        "professor_terms": analysis.professor_terms,
-                        "exam_patterns": analysis.exam_patterns,
-                    },
+                    course_name=course_name,
+                    analysis=analysis_data,
                     question_count=exam_create.question_count,
                     mode=exam_create.mode,
                     topics=topics,
@@ -142,7 +163,7 @@ async def _stream_exam_generation(
                 if event_type == "heartbeat":
                     yield _sse_event(event)
                 elif event_type == "error":
-                    await _discard_draft_exam(db, exam.id)
+                    await _discard_draft_exam(db, exam_id)
                     yield _sse_event(event)
                     return
                 elif event_type == "question":
@@ -151,7 +172,7 @@ async def _stream_exam_generation(
                     total_tokens += tokens
 
                     question = ExamQuestion(
-                        exam_id=exam.id,
+                        exam_id=exam_id,
                         question_number=question_number,
                         question_text=q_data.get("question_text", ""),
                         question_type=q_data.get("question_type", "essay"),
@@ -188,13 +209,13 @@ async def _stream_exam_generation(
                     total_tokens = event.get("tokens", total_tokens)
 
         except Exception as exc:
-            await _discard_draft_exam(db, exam.id)
+            await _discard_draft_exam(db, exam_id)
             yield _sse_event({"type": "error", "content": str(exc), "retryable": True})
             return
 
         generated_count = question_number - 1
         if generated_count != exam_create.question_count:
-            await _discard_draft_exam(db, exam.id)
+            await _discard_draft_exam(db, exam_id)
             yield _sse_event(
                 {
                     "type": "error",
@@ -208,7 +229,18 @@ async def _stream_exam_generation(
             return
 
         # Finalize exam record
-        managed_exam = await db.merge(exam)
+        result = await db.execute(select(Exam).where(Exam.id == exam_id))
+        managed_exam = result.scalar_one_or_none()
+        if managed_exam is None:
+            await db.rollback()
+            yield _sse_event(
+                {
+                    "type": "error",
+                    "content": "Exam generation failed: draft exam no longer exists.",
+                    "retryable": True,
+                }
+            )
+            return
         managed_exam.status = EXAM_STATUS_ACTIVE
         managed_exam.total_tokens_used = total_tokens
         await db.commit()
@@ -222,10 +254,8 @@ async def _stream_exam_generation(
             }
         )
     except asyncio.CancelledError:
-        await _discard_draft_exam(db, exam.id)
+        await _discard_draft_exam(db, exam_id)
         raise
-    finally:
-        _exam_generation_course_locks.discard(lock_course_id)
 
 
 @router.get("/exams", response_model=list[ExamResponse])
@@ -273,11 +303,20 @@ async def create_exam(
             detail="Exam generation is already running for this course.",
         )
     _exam_generation_course_locks.add(course_id)
+    course_name = course.name
+    user_id = current_user.id
+    analysis_data = {
+        "top_concepts": analysis.top_concepts,
+        "question_types": analysis.question_types,
+        "topic_distribution": analysis.topic_distribution,
+        "professor_terms": analysis.professor_terms,
+        "exam_patterns": analysis.exam_patterns,
+    }
 
     try:
         exam = Exam(
             course_id=course_id,
-            user_id=current_user.id,
+            user_id=user_id,
             title=exam_create.title,
             mode=exam_create.mode,
             question_count=exam_create.question_count,
@@ -292,7 +331,15 @@ async def create_exam(
         raise
 
     return StreamingResponse(
-        _stream_exam_generation(exam, course, analysis, exam_create, db, course_id),
+        _stream_exam_generation(
+            exam_id=exam.id,
+            user_id=user_id,
+            course_id=course_id,
+            course_name=course_name,
+            analysis_data=analysis_data,
+            exam_create=exam_create,
+            lock_course_id=course_id,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.analysis import ProfessorAnalysis
 from app.models.exam import ConceptTracking, Exam, ExamQuestion
@@ -114,6 +114,17 @@ async def _mock_grade_response(correct: bool = True) -> dict:
         "feedback": "Well done!" if correct else "Review this concept.",
         "tokens_used": 50,
     }
+
+
+@pytest.fixture(autouse=True)
+def use_test_stream_session(db_engine, monkeypatch) -> None:
+    """Make exam generation streams persist through the same test database engine."""
+    TestSession = async_sessionmaker(
+        bind=db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    monkeypatch.setattr("app.routers.exams.AsyncSessionLocal", TestSession)
 
 
 # ---------------------------------------------------------------------------
@@ -400,6 +411,7 @@ async def test_exam_generation_cancel_rolls_back_draft(
     db_session.add(exam)
     await db_session.flush()
     exam_id = exam.id
+    await db_session.commit()
 
     exam_create = ExamCreate(title="Cancelled Exam", question_count=2, mode="standard")
 
@@ -412,11 +424,18 @@ async def test_exam_generation_cancel_rolls_back_draft(
         return_value=cancelled_generation(),
     ):
         stream = _stream_exam_generation(
-            exam=exam,
-            course=course,
-            analysis=analysis,
+            exam_id=exam_id,
+            user_id=course.user_id,
+            course_id=course_id,
+            course_name=course.name,
+            analysis_data={
+                "top_concepts": analysis.top_concepts,
+                "question_types": analysis.question_types,
+                "topic_distribution": analysis.topic_distribution,
+                "professor_terms": analysis.professor_terms,
+                "exam_patterns": analysis.exam_patterns,
+            },
             exam_create=exam_create,
-            db=db_session,
             lock_course_id=course_id,
         )
         with pytest.raises(asyncio.CancelledError):
@@ -464,11 +483,18 @@ async def test_exam_generation_finalizes_detached_draft(
         return_value=_mock_question_generator(),
     ):
         stream = _stream_exam_generation(
-            exam=exam,
-            course=course,
-            analysis=analysis,
+            exam_id=exam_id,
+            user_id=course.user_id,
+            course_id=course_id,
+            course_name=course.name,
+            analysis_data={
+                "top_concepts": analysis.top_concepts,
+                "question_types": analysis.question_types,
+                "topic_distribution": analysis.topic_distribution,
+                "professor_terms": analysis.professor_terms,
+                "exam_patterns": analysis.exam_patterns,
+            },
             exam_create=exam_create,
-            db=db_session,
             lock_course_id=course_id,
         )
         events = [json.loads(line[len("data: "):]) async for line in stream if line.startswith("data: ")]

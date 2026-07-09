@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.analysis import ProfessorAnalysis
 from app.models.material import Material, PROCESSING_STATUS_COMPLETED
@@ -89,6 +89,17 @@ async def _mock_analyze_generator():
         "tokens": 600,
         "thinking_tokens": 100,
     }
+
+
+@pytest.fixture(autouse=True)
+def use_test_stream_session(db_engine, monkeypatch) -> None:
+    """Make analysis streams persist through the same test database engine."""
+    TestSession = async_sessionmaker(
+        bind=db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    monkeypatch.setattr("app.routers.analysis.AsyncSessionLocal", TestSession)
 
 
 # ---------------------------------------------------------------------------
