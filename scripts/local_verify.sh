@@ -144,5 +144,9 @@ docker compose exec -T backend python scripts/e2e_smoke.py
 log "Checking frontend is reachable on http://127.0.0.1:${FRONTEND_PORT}"
 curl -fsS -I "http://127.0.0.1:${FRONTEND_PORT}" >/dev/null
 
+log "Checking backend CORS allows http://localhost:${FRONTEND_PORT}"
+cors_headers="$(curl -fsS -D - -o /dev/null -H "Origin: http://localhost:${FRONTEND_PORT}" "http://127.0.0.1:${BACKEND_PORT}/health")"
+printf '%s\n' "$cors_headers" | grep -i "access-control-allow-origin: http://localhost:${FRONTEND_PORT}" >/dev/null
+
 log "Local verification passed"
 printf '\nFrontend: http://localhost:%s\nBackend:  http://localhost:%s\nDocs:     http://localhost:%s/docs\n' "$FRONTEND_PORT" "$BACKEND_PORT" "$BACKEND_PORT"

@@ -44,7 +44,7 @@ services:
       AUTH_RATE_LIMIT_WINDOW_SECONDS: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:-300}
       AI_STREAM_HEARTBEAT_SECONDS: ${AI_STREAM_HEARTBEAT_SECONDS:-15}
       AI_STREAM_EVENT_TIMEOUT_SECONDS: ${AI_STREAM_EVENT_TIMEOUT_SECONDS:-180}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:3003,http://127.0.0.1:3003}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:${FRONTEND_PORT:-3003},http://127.0.0.1:${FRONTEND_PORT:-3003}}
     volumes:
       - uploads_data:/app/uploads
     depends_on:
