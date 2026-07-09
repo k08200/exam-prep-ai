@@ -318,6 +318,54 @@ async def test_file_parser_dispatch_pdf(parser: FileParser) -> None:
         os.unlink(path)
 
 
+@pytest.mark.asyncio
+async def test_file_parser_dispatch_unknown_type_returns_empty(parser: FileParser) -> None:
+    """parse_file returns an empty result for unsupported file types."""
+    result = await parser.parse_file("/tmp/not-used.xyz", "spreadsheet")
+
+    assert result == {"text": "", "page_count": None}
+
+
+@pytest.mark.asyncio
+async def test_file_parser_pdf_text_fallback_failure_returns_empty(
+    parser: FileParser,
+) -> None:
+    """PDF fallback returns an empty result when neither PDF nor text reading works."""
+    result = await parser.parse_pdf("/tmp/definitely-missing-file.pdf")
+
+    assert result == {"text": "", "page_count": None}
+
+
+@pytest.mark.asyncio
+async def test_file_parser_image_converts_rgba_before_ocr(
+    parser: FileParser,
+    monkeypatch,
+) -> None:
+    """Image parser converts alpha-channel images before passing them to OCR."""
+    from PIL import Image
+
+    converted_modes: list[str] = []
+
+    def fake_ocr(image, lang: str) -> str:
+        converted_modes.append(image.mode)
+        assert lang == "eng+kor"
+        return "ocr lecture text"
+
+    monkeypatch.setattr("pytesseract.image_to_string", fake_ocr)
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        path = f.name
+    try:
+        Image.new("RGBA", (4, 4), (255, 0, 0, 128)).save(path)
+
+        result = await parser.parse_image(path)
+
+        assert result == {"text": "ocr lecture text", "page_count": 1}
+        assert converted_modes == ["RGB"]
+    finally:
+        os.unlink(path)
+
+
 def test_get_claude_service_returns_mock_when_flag_set(monkeypatch) -> None:
     """get_claude_service() returns MockClaudeService when USE_MOCK_CLAUDE=True."""
     from app.core.config import settings
@@ -398,6 +446,49 @@ def test_validate_runtime_settings_accepts_safe_production(monkeypatch) -> None:
     settings.validate_runtime_settings()
 
 
+@pytest.mark.asyncio
+async def test_get_current_user_rejects_token_for_missing_user(
+    db_session: AsyncSession,
+) -> None:
+    """A valid token whose user no longer exists is rejected."""
+    from fastapi import HTTPException
+
+    from app.core.security import create_access_token, get_current_user
+
+    token = create_access_token({"sub": "deleted-user@example.com"})
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user(token=token, db=db_session)
+
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_rejects_inactive_user(
+    db_session: AsyncSession,
+) -> None:
+    """Inactive accounts cannot authenticate even with a valid token."""
+    from fastapi import HTTPException
+
+    from app.core.security import create_access_token, get_current_user, get_password_hash
+    from app.models.user import User
+
+    user = User(
+        email="inactive@example.com",
+        hashed_password=get_password_hash("password123"),
+        is_active=False,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    token = create_access_token({"sub": user.email})
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user(token=token, db=db_session)
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Inactive user"
+
+
 def test_validate_runtime_settings_rejects_bad_timeout(monkeypatch) -> None:
     """Production mode rejects non-positive request timeout settings."""
     from app.core.config import settings
@@ -441,6 +532,78 @@ async def test_ready_endpoint_checks_dependencies(client, monkeypatch, tmp_path)
     assert data["status"] == "ready"
     assert data["database"] == "ok"
     assert data["upload_dir"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_root_endpoint_returns_api_metadata(client) -> None:
+    """GET / returns API metadata that helps local users find docs and health checks."""
+    resp = await client.get("/")
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "name": "Exam Prep AI",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint_reports_real_claude_mode(monkeypatch) -> None:
+    """health_check reflects non-mock Claude configuration."""
+    from app.core.config import settings
+    from app.main import health_check
+
+    monkeypatch.setattr(settings, "USE_MOCK_CLAUDE", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
+
+    data = await health_check()
+
+    assert data["ai_mode"] == "claude"
+    assert data["claude_configured"] is True
+
+
+@pytest.mark.asyncio
+async def test_readiness_check_reports_unwritable_upload_dir(monkeypatch, tmp_path) -> None:
+    """readiness_check reports not_ready when uploads cannot be written."""
+    from app.core.config import settings
+    from app.main import readiness_check
+
+    class FakeDB:
+        async def execute(self, query):
+            return None
+
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path / "missing-dir"))
+
+    data = await readiness_check(db=FakeDB())
+
+    assert data["status"] == "not_ready"
+    assert data["database"] == "ok"
+    assert data["upload_dir"] == "not_writable"
+
+
+@pytest.mark.asyncio
+async def test_lifespan_creates_upload_dir_runs_init_and_recovers(monkeypatch, tmp_path) -> None:
+    """Application lifespan prepares local storage, migrations, and stale material recovery."""
+    from unittest.mock import AsyncMock
+
+    from fastapi import FastAPI
+
+    from app.core.config import settings
+    from app.main import lifespan
+
+    init_mock = AsyncMock()
+    recover_mock = AsyncMock(return_value=0)
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(settings, "AUTO_CREATE_TABLES", True)
+    monkeypatch.setattr("app.main.init_db", init_mock)
+    monkeypatch.setattr("app.main.materials.recover_stale_processing_materials", recover_mock)
+
+    async with lifespan(FastAPI()):
+        assert (tmp_path / "uploads").is_dir()
+
+    init_mock.assert_awaited_once()
+    recover_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -489,6 +652,72 @@ async def test_request_context_middleware_times_out(monkeypatch) -> None:
 
     assert response.status_code == 504
     assert response.headers["X-Request-ID"]
+
+
+@pytest.mark.asyncio
+async def test_request_context_middleware_success_uses_existing_request_id() -> None:
+    """The request middleware preserves caller request IDs on successful responses."""
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    from app.core.middleware import request_context_middleware
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def call_next(request: Request) -> Response:
+        return Response("ok", status_code=202)
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/middleware-success",
+            "headers": [(b"x-request-id", b"caller-request-id")],
+            "query_string": b"",
+            "server": ("testserver", 80),
+            "scheme": "http",
+            "client": ("127.0.0.1", 1234),
+        },
+        receive,
+    )
+
+    response = await request_context_middleware(request, call_next)
+
+    assert response.status_code == 202
+    assert response.headers["X-Request-ID"] == "caller-request-id"
+
+
+@pytest.mark.asyncio
+async def test_request_context_middleware_reraises_handler_errors() -> None:
+    """Unexpected handler errors are logged and re-raised for FastAPI to handle."""
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    from app.core.middleware import request_context_middleware
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def failing_call_next(request: Request) -> Response:
+        raise RuntimeError("handler failed")
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/middleware-error",
+            "headers": [],
+            "query_string": b"",
+            "server": ("testserver", 80),
+            "scheme": "http",
+            "client": ("127.0.0.1", 1234),
+        },
+        receive,
+    )
+
+    with pytest.raises(RuntimeError, match="handler failed"):
+        await request_context_middleware(request, failing_call_next)
 
 
 @pytest.mark.asyncio

@@ -638,6 +638,119 @@ async def test_retry_failed_material_resets_status(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_value", "expected_detail"),
+    [
+        (PROCESSING_STATUS_PENDING, "already being processed"),
+        (PROCESSING_STATUS_PROCESSING, "already being processed"),
+        ("completed", "already been processed"),
+    ],
+)
+async def test_retry_material_conflicts_for_non_failed_statuses(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+    status_value: str,
+    expected_detail: str,
+) -> None:
+    """Retry is only allowed after a material has failed."""
+    course_id = test_course["id"]
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("retry_conflict.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+            headers=auth_headers,
+        )
+    material_id = upload_resp.json()["materials"][0]["id"]
+
+    result = await db_session.execute(select(Material).where(Material.id == uuid.UUID(material_id)))
+    material = result.scalar_one()
+    material.processing_status = status_value
+    await db_session.commit()
+
+    retry_resp = await client.post(
+        f"/courses/{course_id}/materials/{material_id}/retry",
+        headers=auth_headers,
+    )
+
+    assert retry_resp.status_code == 409
+    assert expected_detail in retry_resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_material_with_missing_file_sets_actionable_error(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Retrying a failed material whose upload disappeared returns a clear 409."""
+    course_id = test_course["id"]
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_resp = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("missing_upload.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+            headers=auth_headers,
+        )
+    material_id = upload_resp.json()["materials"][0]["id"]
+
+    result = await db_session.execute(select(Material).where(Material.id == uuid.UUID(material_id)))
+    material = result.scalar_one()
+    material.processing_status = PROCESSING_STATUS_FAILED
+    material.processing_error = "previous parse failure"
+    Path(material.file_path).unlink(missing_ok=True)
+    await db_session.commit()
+
+    retry_resp = await client.post(
+        f"/courses/{course_id}/materials/{material_id}/retry",
+        headers=auth_headers,
+    )
+
+    assert retry_resp.status_code == 409
+    assert "Uploaded file is missing" in retry_resp.json()["detail"]
+
+    await db_session.rollback()
+    result = await db_session.execute(select(Material).where(Material.id == uuid.UUID(material_id)))
+    material = result.scalar_one()
+    assert "Uploaded file is missing" in material.processing_error
+
+
+@pytest.mark.asyncio
+async def test_retry_unknown_material_returns_404(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+) -> None:
+    """Retrying a missing material returns 404 instead of silently doing nothing."""
+    course_id = test_course["id"]
+    retry_resp = await client.post(
+        f"/courses/{course_id}/materials/{uuid.uuid4()}/retry",
+        headers=auth_headers,
+    )
+
+    assert retry_resp.status_code == 404
+    assert retry_resp.json()["detail"] == "Material not found"
+
+
+@pytest.mark.asyncio
+async def test_delete_unknown_material_returns_404(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+) -> None:
+    """Deleting a missing material returns 404."""
+    course_id = test_course["id"]
+    delete_resp = await client.delete(
+        f"/courses/{course_id}/materials/{uuid.uuid4()}",
+        headers=auth_headers,
+    )
+
+    assert delete_resp.status_code == 404
+    assert delete_resp.json()["detail"] == "Material not found"
+
+
+@pytest.mark.asyncio
 async def test_retry_failed_material_invalidates_existing_analysis(
     client: AsyncClient,
     auth_headers: dict,
