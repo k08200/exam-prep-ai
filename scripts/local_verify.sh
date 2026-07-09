@@ -36,6 +36,50 @@ run_with_timeout() {
   return "$status"
 }
 
+check_port_available() {
+  port="$1"
+  allowed_container="$2"
+  label="$3"
+
+  docker_owners="$(
+    docker ps --format '{{.Names}}|{{.Ports}}' \
+      | grep -E "(0\.0\.0\.0:${port}->|\[::\]:${port}->)" \
+      | cut -d '|' -f 1 \
+      || true
+  )"
+  unexpected_owners="$(
+    printf '%s\n' "$docker_owners" \
+      | grep -v -x "$allowed_container" \
+      | grep -v '^$' \
+      || true
+  )"
+  if [ -n "$unexpected_owners" ]; then
+    cat >&2 <<EOF
+Port ${port} is already used by another Docker container:
+${unexpected_owners}
+
+Stop that container or change its port, then run ./scripts/local_verify.sh again.
+This script does not remove project volumes.
+EOF
+    exit 1
+  fi
+
+  if [ -z "$docker_owners" ] && command -v lsof >/dev/null 2>&1; then
+    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/tmp/exam-prep-port-"$port".txt 2>/dev/null; then
+      cat >&2 <<EOF
+Port ${port} is already in use, so ${label} cannot start.
+
+Current listener:
+$(cat /tmp/exam-prep-port-"$port".txt)
+
+Stop that process or change its port, then run ./scripts/local_verify.sh again.
+This script does not remove project volumes.
+EOF
+      exit 1
+    fi
+  fi
+}
+
 log "Checking Docker daemon"
 if ! run_with_timeout 30 docker version >/dev/null 2>&1; then
   cat >&2 <<'EOF'
@@ -53,6 +97,10 @@ fi
 
 log "Validating Docker Compose configuration"
 docker compose config --quiet
+
+log "Checking local ports"
+check_port_available 8001 exam-prep-ai-backend-1 "the backend API"
+check_port_available 3003 exam-prep-ai-frontend-1 "the frontend"
 
 log "Building backend and frontend images"
 docker compose build --progress=plain backend frontend

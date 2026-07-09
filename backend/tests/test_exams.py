@@ -428,6 +428,59 @@ async def test_exam_generation_cancel_rolls_back_draft(
 
 
 @pytest.mark.asyncio
+async def test_exam_generation_finalizes_detached_draft(
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Generation finalizes a draft even when the request-scoped ORM object is detached."""
+    from app.models.course import Course
+    from app.models.exam import EXAM_STATUS_ACTIVE, EXAM_STATUS_DRAFT
+    from app.routers.exams import _stream_exam_generation
+
+    course_id = uuid.UUID(test_course["id"])
+    analysis = await _create_analysis(db_session, course_id)
+    await db_session.commit()
+
+    course_result = await db_session.execute(select(Course).where(Course.id == course_id))
+    course = course_result.scalar_one()
+    exam = Exam(
+        course_id=course.id,
+        user_id=course.user_id,
+        title="Detached Draft",
+        mode="standard",
+        question_count=2,
+        status=EXAM_STATUS_DRAFT,
+    )
+    db_session.add(exam)
+    await db_session.flush()
+    exam_id = exam.id
+    await db_session.commit()
+    db_session.expunge(exam)
+
+    exam_create = ExamCreate(title="Detached Draft", question_count=2, mode="standard")
+
+    with patch(
+        "app.routers.exams.claude_service.generate_exam_questions",
+        return_value=_mock_question_generator(),
+    ):
+        stream = _stream_exam_generation(
+            exam=exam,
+            course=course,
+            analysis=analysis,
+            exam_create=exam_create,
+            db=db_session,
+            lock_course_id=course_id,
+        )
+        events = [json.loads(line[len("data: "):]) async for line in stream if line.startswith("data: ")]
+
+    assert events[-1]["type"] == "complete"
+    await db_session.rollback()
+    result = await db_session.execute(select(Exam).where(Exam.id == exam_id))
+    finalized = result.scalar_one()
+    assert finalized.status == EXAM_STATUS_ACTIVE
+
+
+@pytest.mark.asyncio
 async def test_create_exam_without_analysis_fails(
     client: AsyncClient,
     auth_headers: dict,

@@ -47,6 +47,21 @@ def _sse_events(text: str) -> list[dict[str, Any]]:
     return events
 
 
+def _smoke_answer_for(question: dict[str, Any]) -> str:
+    """Return a non-blank answer that satisfies the submit validation contract."""
+    question_type = question.get("question_type")
+    choices = question.get("choices") or []
+    if question_type == "multiple_choice" and choices:
+        return str(choices[0].get("label") or choices[0].get("text") or "A")
+    if question_type == "true_false":
+        return "True"
+    return (
+        "Photosynthesis, respiration, and cell division are connected exam "
+        "concepts because they explain how cells transform energy and pass "
+        "genetic information."
+    )
+
+
 async def _wait_for_material(
     client: httpx.AsyncClient,
     course_id: str,
@@ -152,7 +167,7 @@ async def main() -> None:
         exam.raise_for_status()
         questions = exam.json()["questions"]
         answers = [
-            {"question_id": question["id"], "student_answer": ""}
+            {"question_id": question["id"], "student_answer": _smoke_answer_for(question)}
             for question in questions
         ]
         submit = await client.post(

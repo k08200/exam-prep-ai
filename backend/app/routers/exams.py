@@ -76,6 +76,16 @@ def _question_to_schema(q: ExamQuestion) -> QuestionResponse:
     )
 
 
+async def _discard_draft_exam(db: AsyncSession, exam_id: uuid.UUID) -> None:
+    """Remove an unfinished draft exam after generation fails or is cancelled."""
+    await db.rollback()
+    result = await db.execute(select(Exam).where(Exam.id == exam_id))
+    draft = result.scalar_one_or_none()
+    if draft is not None and draft.status == EXAM_STATUS_DRAFT:
+        await db.delete(draft)
+        await db.commit()
+
+
 async def _stream_exam_generation(
     exam: Exam,
     course: Course,
@@ -132,7 +142,7 @@ async def _stream_exam_generation(
                 if event_type == "heartbeat":
                     yield _sse_event(event)
                 elif event_type == "error":
-                    await db.rollback()
+                    await _discard_draft_exam(db, exam.id)
                     yield _sse_event(event)
                     return
                 elif event_type == "question":
@@ -178,13 +188,13 @@ async def _stream_exam_generation(
                     total_tokens = event.get("tokens", total_tokens)
 
         except Exception as exc:
-            await db.rollback()
+            await _discard_draft_exam(db, exam.id)
             yield _sse_event({"type": "error", "content": str(exc), "retryable": True})
             return
 
         generated_count = question_number - 1
         if generated_count != exam_create.question_count:
-            await db.rollback()
+            await _discard_draft_exam(db, exam.id)
             yield _sse_event(
                 {
                     "type": "error",
@@ -198,20 +208,21 @@ async def _stream_exam_generation(
             return
 
         # Finalize exam record
-        exam.status = EXAM_STATUS_ACTIVE
-        exam.total_tokens_used = total_tokens
+        managed_exam = await db.merge(exam)
+        managed_exam.status = EXAM_STATUS_ACTIVE
+        managed_exam.total_tokens_used = total_tokens
         await db.commit()
 
         yield _sse_event(
             {
                 "type": "complete",
-                "exam_id": str(exam.id),
+                "exam_id": str(managed_exam.id),
                 "total_tokens": total_tokens,
                 "question_count": question_number - 1,
             }
         )
     except asyncio.CancelledError:
-        await db.rollback()
+        await _discard_draft_exam(db, exam.id)
         raise
     finally:
         _exam_generation_course_locks.discard(lock_course_id)
@@ -275,6 +286,7 @@ async def create_exam(
         db.add(exam)
         await db.flush()
         await db.refresh(exam)
+        await db.commit()
     except Exception:
         _exam_generation_course_locks.discard(course_id)
         raise
