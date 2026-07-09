@@ -38,9 +38,6 @@ backend/uploads/
 *.swp
 *.swo
 
-# Docker
-.dockerignore
-
 # Logs
 *.log
 

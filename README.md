@@ -57,6 +57,15 @@ If another app already uses the default local ports, run verification on alterna
 BACKEND_PORT=8011 FRONTEND_PORT=3013 ./scripts/local_verify.sh
 ```
 
+For a deeper local check that drives the actual browser UI after the Docker stack is running:
+```bash
+cd frontend
+npm ci
+npx playwright install chromium
+cd ..
+RUN_BROWSER_E2E=true ./scripts/local_verify.sh
+```
+
 ### Development With Hot Reload
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
@@ -227,6 +236,7 @@ npm run dev
 | BACKEND_PORT | Host port for Docker backend | No (default: 8001) |
 | FRONTEND_PORT | Host port for Docker frontend | No (default: 3003) |
 | POSTGRES_PORT | Host port for Docker Postgres | No (default: 5434) |
+| RUN_BROWSER_E2E | Run optional local Playwright browser smoke test during `scripts/local_verify.sh` | No (default: false) |
 | RUN_MIGRATIONS | Run Alembic before backend startup | No (default: true) |
 | AUTO_CREATE_TABLES | Fallback SQLAlchemy table creation | No (default in Docker: false) |
 | CORS_ORIGINS | Comma-separated frontend origins allowed by the API | No (local defaults) |
