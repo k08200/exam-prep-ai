@@ -11,9 +11,14 @@ import {
   Menu,
   X,
   ChevronLeft,
+  AlertTriangle,
+  CheckCircle,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
+import { metaApi } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
+import type { RuntimeHealth } from '@/types';
 
 interface NavItem {
   href: string;
@@ -132,6 +137,13 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const { user, loading, logout } = useAuth();
+  const { data: runtimeHealth } = useQuery<RuntimeHealth>({
+    queryKey: ['runtime-health'],
+    queryFn: async () => (await metaApi.health()).data,
+    enabled: !loading && Boolean(user),
+    staleTime: 60_000,
+    retry: 1,
+  });
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -208,6 +220,32 @@ export default function DashboardLayout({
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto">
+          {runtimeHealth?.ai_mode === 'mock' && (
+            <div
+              role="status"
+              className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:px-6"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+              <p>
+                <span className="font-semibold">Demo AI mode.</span>{' '}
+                Results use deterministic local responses. Set{' '}
+                <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">USE_MOCK_CLAUDE=false</code>{' '}
+                with an Anthropic API key to use Claude.
+              </p>
+            </div>
+          )}
+          {runtimeHealth?.ai_mode === 'claude' && runtimeHealth.claude_configured && (
+            <div
+              role="status"
+              className="flex items-start gap-2 border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 sm:px-6"
+            >
+              <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-600" />
+              <p>
+                <span className="font-semibold">Claude AI connected.</span>{' '}
+                New analyses, exams, and grading use the configured model.
+              </p>
+            </div>
+          )}
           {children}
         </main>
       </div>

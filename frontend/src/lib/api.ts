@@ -1,5 +1,6 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
+import type { RuntimeHealth } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
@@ -7,6 +8,10 @@ export const api = axios.create({
   baseURL: API_URL,
   headers: { 'Content-Type': 'application/json' },
 });
+
+export const metaApi = {
+  health: () => api.get<RuntimeHealth>('/health'),
+};
 
 export function extractErrorMessage(
   error: unknown,

@@ -23,6 +23,7 @@ async function registerAndCreateCourse(page: Page, courseName: string) {
 
   await expect(page).toHaveURL(/\/dashboard/);
   await expect(page.getByRole('heading', { name: /welcome back/i })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('Demo AI mode');
 
   await page.getByRole('button', { name: /create course/i }).click();
   await page.getByPlaceholder('e.g., Introduction to Machine Learning').fill(courseName);

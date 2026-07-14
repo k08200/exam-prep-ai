@@ -6,6 +6,13 @@ export interface User {
   created_at: string;
 }
 
+export interface RuntimeHealth {
+  status: string;
+  version: string;
+  ai_mode: 'mock' | 'claude' | string;
+  claude_configured: boolean;
+}
+
 export interface Course {
   id: string;
   user_id: string;
