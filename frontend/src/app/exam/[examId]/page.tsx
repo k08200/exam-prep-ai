@@ -28,6 +28,7 @@ export default function ExamPage() {
   const { user, loading: authLoading } = useAuth();
 
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answersHydrated, setAnswersHydrated] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [examResult, setExamResult] = useState<ExamResult | null>(null);
@@ -67,6 +68,40 @@ export default function ExamPage() {
   });
 
   const questions = exam?.questions ?? [];
+  const answerStorageKey = `exam-prep-ai:answers:${examId}`;
+
+  useEffect(() => {
+    let storedAnswers: Record<string, string> = {};
+    try {
+      const stored = window.localStorage.getItem(answerStorageKey);
+      const parsed = stored ? JSON.parse(stored) : null;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const entries = Object.entries(parsed as Record<string, unknown>).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string'
+        );
+        storedAnswers = Object.fromEntries(
+          entries
+        );
+      }
+    } catch {
+      // Ignore unavailable or malformed local draft data.
+    }
+    setAnswers(storedAnswers);
+    setAnswersHydrated(true);
+  }, [answerStorageKey]);
+
+  useEffect(() => {
+    if (!answersHydrated || exam?.status !== 'active') return;
+    try {
+      if (Object.keys(answers).length > 0) {
+        window.localStorage.setItem(answerStorageKey, JSON.stringify(answers));
+      } else {
+        window.localStorage.removeItem(answerStorageKey);
+      }
+    } catch {
+      // Continue without persistence if browser storage is unavailable.
+    }
+  }, [answers, answersHydrated, answerStorageKey, exam?.status]);
 
   const answeredCount = useMemo(() => {
     return questions.filter(
@@ -97,6 +132,11 @@ export default function ExamPage() {
       setGradingText('Submitting answers...');
       const res = await examsApi.submit(examId, submissionAnswers);
       setExamResult(res.data);
+      try {
+        window.localStorage.removeItem(answerStorageKey);
+      } catch {
+        // Ignore unavailable browser storage after a successful submission.
+      }
       queryClient.invalidateQueries({ queryKey: ['exam', examId] });
       if (exam?.course_id) {
         queryClient.invalidateQueries({ queryKey: ['exams', exam?.course_id] });

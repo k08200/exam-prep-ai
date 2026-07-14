@@ -156,6 +156,8 @@ test.describe('core browser flow', () => {
 
     await answerEveryQuestion(page);
     await expect(page.getByText(/5 of 5 answered/i)).toBeVisible({ timeout: 10_000 });
+    await page.reload();
+    await expect(page.getByText(/5 of 5 answered/i)).toBeVisible({ timeout: 10_000 });
     await page.getByRole('button', { name: /submit exam/i }).click();
     await page.getByRole('button', { name: /submit now/i }).click();
 
