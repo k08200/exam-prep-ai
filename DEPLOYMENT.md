@@ -9,6 +9,7 @@
 - Set `RUN_MIGRATIONS=true` unless the platform has a separate migration release step.
 - Set `AUTO_CREATE_TABLES=false` in production.
 - Keep `EXAM_GENERATION_STALE_MINUTES` long enough for the slowest expected Claude generation so an active stream is not reclaimed.
+- Keep `ANALYSIS_RUN_STALE_MINUTES` longer than the slowest expected analysis stream so an active run is not reclaimed while still running.
 - Mount persistent storage for `UPLOAD_DIR`.
 - Set `MAX_USER_STORAGE_BYTES` to a per-user limit appropriate for the disk available to your users.
 - Set `MAX_DAILY_AI_ANALYSES`, `MAX_DAILY_AI_GENERATED_QUESTIONS`, and `MAX_DAILY_AI_GRADES` to a budget that matches the configured Claude model and account plan. Limits reset at midnight UTC and are reserved before provider work starts.
@@ -116,7 +117,7 @@ Before routing traffic:
 - `/health` returns `status: ok`.
 - `/ready` returns `status: ready`, `database: ok`, and `upload_dir: ok`.
 - `alembic upgrade head` has completed.
-- The `0004_daily_ai_usage` migration is applied so daily AI limits, concurrent draft-generation protection, and password session invalidation work correctly.
+- The `0005_analysis_runs` migration is applied so daily AI limits, shared analysis locking, concurrent draft-generation protection, and password session invalidation work correctly.
 - Frontend build points to the production API URL.
 - `USE_MOCK_CLAUDE` is false only when `ANTHROPIC_API_KEY` is configured.
 - Upload storage is persistent across restarts.

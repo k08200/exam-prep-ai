@@ -211,17 +211,14 @@ async def test_analysis_conflict_when_course_already_running(
     db_session: AsyncSession,
 ) -> None:
     """A second analysis request for the same course is rejected while one is running."""
-    from app.routers.analysis import _analysis_course_locks
+    from app.models.analysis_run import AnalysisRun
 
     course_id = uuid.UUID(test_course["id"])
     await _create_completed_material(db_session, course_id)
     await db_session.commit()
-    _analysis_course_locks.add(course_id)
-
-    try:
-        resp = await client.post(f"/courses/{course_id}/analysis", headers=auth_headers)
-    finally:
-        _analysis_course_locks.discard(course_id)
+    db_session.add(AnalysisRun(course_id=course_id))
+    await db_session.commit()
+    resp = await client.post(f"/courses/{course_id}/analysis", headers=auth_headers)
 
     assert resp.status_code == 409
     assert "already running" in resp.json()["detail"]
@@ -263,7 +260,7 @@ async def test_analysis_lock_released_after_completion(
     db_session: AsyncSession,
 ) -> None:
     """The in-flight analysis lock is released after the stream completes."""
-    from app.routers.analysis import _analysis_course_locks
+    from app.models.analysis_run import AnalysisRun
 
     course_id = uuid.UUID(test_course["id"])
     await _create_completed_material(db_session, course_id)
@@ -276,7 +273,8 @@ async def test_analysis_lock_released_after_completion(
         resp = await client.post(f"/courses/{course_id}/analysis", headers=auth_headers)
 
     assert resp.status_code == 200
-    assert course_id not in _analysis_course_locks
+    run = await db_session.get(AnalysisRun, course_id)
+    assert run is None
 
 
 @pytest.mark.asyncio
@@ -287,7 +285,7 @@ async def test_analysis_lock_released_after_stream_error(
     db_session: AsyncSession,
 ) -> None:
     """The in-flight analysis lock is released when the provider stream errors."""
-    from app.routers.analysis import _analysis_course_locks
+    from app.models.analysis_run import AnalysisRun
 
     async def error_generator():
         yield {"type": "error", "content": "provider busy", "retryable": True}
@@ -304,7 +302,8 @@ async def test_analysis_lock_released_after_stream_error(
 
     assert resp.status_code == 200
     assert "provider busy" in resp.text
-    assert course_id not in _analysis_course_locks
+    run = await db_session.get(AnalysisRun, course_id)
+    assert run is None
 
 
 @pytest.mark.asyncio

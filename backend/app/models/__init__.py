@@ -4,6 +4,7 @@ from app.models.material import Material
 from app.models.analysis import ProfessorAnalysis
 from app.models.exam import Exam, ExamQuestion, StudentResponse, ConceptTracking
 from app.models.ai_usage import DailyAIUsage
+from app.models.analysis_run import AnalysisRun
 
 __all__ = [
     "User",
@@ -15,4 +16,5 @@ __all__ = [
     "StudentResponse",
     "ConceptTracking",
     "DailyAIUsage",
+    "AnalysisRun",
 ]

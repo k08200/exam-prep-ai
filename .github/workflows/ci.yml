@@ -210,7 +210,7 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:18001/ready | grep '"status":"ready"'
-          docker compose -p exam-prep-ai-ci exec -T backend alembic current | grep '0004_daily_ai_usage'
+          docker compose -p exam-prep-ai-ci exec -T backend alembic current | grep '0005_analysis_runs'
           docker compose -p exam-prep-ai-ci exec -T db \
             psql -U examprep -d examprep_db -tAc \
             "SELECT indexname FROM pg_indexes WHERE tablename='exams' AND indexname='uq_exams_one_draft_per_course';" \

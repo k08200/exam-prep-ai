@@ -1,11 +1,13 @@
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -13,6 +15,7 @@ from app.core.database import AsyncSessionLocal, get_db
 from app.core.security import get_current_user
 from app.core.sse import iter_with_heartbeat, sse_event
 from app.models.analysis import ProfessorAnalysis
+from app.models.analysis_run import AnalysisRun
 from app.models.course import Course
 from app.models.material import Material, PROCESSING_STATUS_COMPLETED
 from app.models.user import User
@@ -23,7 +26,6 @@ from app.services.ai_usage_service import AIUsageService
 
 router = APIRouter(tags=["analysis"])
 claude_service = get_claude_service()
-_analysis_course_locks: set[uuid.UUID] = set()
 logger = logging.getLogger(__name__)
 ai_usage_service = AIUsageService()
 MATERIAL_SEPARATOR = "\n\n---\n\n"
@@ -107,12 +109,36 @@ async def _assert_course_ownership(
     return course
 
 
+async def _acquire_analysis_run(course_id: uuid.UUID, db: AsyncSession) -> bool:
+    """Atomically reserve the course analysis slot across backend instances."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.ANALYSIS_RUN_STALE_MINUTES)
+    try:
+        async with db.begin_nested():
+            await db.execute(
+                delete(AnalysisRun).where(
+                    AnalysisRun.course_id == course_id,
+                    AnalysisRun.created_at < cutoff,
+                )
+            )
+            db.add(AnalysisRun(course_id=course_id))
+            await db.flush()
+    except IntegrityError:
+        return False
+    return True
+
+
+async def _release_analysis_run(course_id: uuid.UUID) -> None:
+    """Release the shared run slot after a stream finishes or is cancelled."""
+    async with AsyncSessionLocal() as db:
+        await db.execute(delete(AnalysisRun).where(AnalysisRun.course_id == course_id))
+        await db.commit()
+
+
 async def _stream_analysis(
     course_id: uuid.UUID,
     course_name: str,
     professor_name: str,
     materials_text: str,
-    lock_course_id: uuid.UUID,
     input_was_truncated: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Internal generator: stream SSE events for professor analysis."""
@@ -243,7 +269,7 @@ async def _stream_analysis(
             }
         )
     finally:
-        _analysis_course_locks.discard(lock_course_id)
+        await _release_analysis_run(course_id)
 
 
 @router.post("/courses/{course_id}/analysis")
@@ -286,18 +312,18 @@ async def run_analysis(
             ),
         )
 
-    if course_id in _analysis_course_locks:
+    if not await _acquire_analysis_run(course_id, db):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Analysis is already running for this course.",
         )
-    _analysis_course_locks.add(course_id)
 
     try:
         await ai_usage_service.reserve(db, current_user.id, analyses=1)
         await db.commit()
     except Exception:
-        _analysis_course_locks.discard(course_id)
+        await db.rollback()
+        await _release_analysis_run(course_id)
         raise
 
     materials_text, input_was_truncated = _build_materials_text(usable_materials)
@@ -310,7 +336,6 @@ async def run_analysis(
             course_name,
             professor_name,
             materials_text,
-            course_id,
             input_was_truncated=input_was_truncated,
         ),
         media_type="text/event-stream",
