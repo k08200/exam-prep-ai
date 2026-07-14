@@ -122,8 +122,12 @@ test.describe('core browser flow', () => {
 
     await page.getByRole('button', { name: /^exams$/i }).click();
     await page.getByRole('button', { name: /generate exam/i }).click();
-    await expect(page.getByRole('heading', { name: /generate practice exam/i })).toBeVisible();
-    await page.getByPlaceholder('e.g. Midterm Practice').fill('Browser Full Flow Practice');
+    const generateDialog = page.getByRole('dialog', { name: /generate practice exam/i });
+    await expect(generateDialog).toBeVisible();
+    await expect(generateDialog).toHaveAttribute('aria-modal', 'true');
+    await generateDialog
+      .getByPlaceholder('e.g. Midterm Practice')
+      .fill('Browser Full Flow Practice');
     await page.locator('input[type="range"]').evaluate((input) => {
       const range = input as HTMLInputElement;
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
@@ -132,7 +136,7 @@ test.describe('core browser flow', () => {
       range.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await expect(page.getByText('5 questions')).toBeVisible();
-    await page.getByRole('button', { name: /^generate exam$/i }).last().click();
+    await generateDialog.getByRole('button', { name: /^generate exam$/i }).click();
 
     await expect(page).toHaveURL(/\/exam\//, { timeout: 30_000 });
     await expect(page.getByRole('heading', { name: 'Browser Full Flow Practice' })).toBeVisible();
