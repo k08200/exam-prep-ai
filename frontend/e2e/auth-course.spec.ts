@@ -74,6 +74,14 @@ async function answerEveryQuestion(page: Page) {
 test.describe('core browser flow', () => {
   test('registers, creates a course, and preserves local auth errors', async ({ page }) => {
     await registerAndCreateCourse(page, 'Browser E2E Biology');
+    await page.getByRole('button', { name: /edit course/i }).click();
+    const courseEditor = page.getByRole('dialog', { name: /edit course/i });
+    await courseEditor.getByLabel('Course Name').fill('Browser E2E Biology Updated');
+    await courseEditor.getByLabel('Professor Name').fill('Dr. Updated');
+    await courseEditor.getByRole('button', { name: /save changes/i }).click();
+    await expect(page.getByRole('heading', { name: 'Browser E2E Biology Updated' })).toBeVisible();
+    await expect(page.getByText('Prof. Dr. Updated')).toBeVisible();
+
     await page.getByRole('button', { name: /upload files/i }).click();
     await page.locator('input[type="file"]').setInputFiles({
       name: 'legacy-notes.doc',

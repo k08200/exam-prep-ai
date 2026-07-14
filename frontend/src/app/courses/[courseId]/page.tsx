@@ -12,6 +12,7 @@ import {
   AlertCircle,
   RefreshCw,
   Zap,
+  Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -51,6 +52,13 @@ interface GenerateExamOptions {
   mode: 'standard' | 'cram';
 }
 
+interface CourseEditValues {
+  name: string;
+  professor_name: string;
+  subject: string;
+  description: string;
+}
+
 export default function CourseDetailPage() {
   const params = useParams();
   const courseId = params.courseId as string;
@@ -60,6 +68,15 @@ export default function CourseDetailPage() {
   const [activeTab, setActiveTab] = useState<TabId>('materials');
   const [showUpload, setShowUpload] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isEditCourseOpen, setIsEditCourseOpen] = useState(false);
+  const [courseEditValues, setCourseEditValues] = useState<CourseEditValues>({
+    name: '',
+    professor_name: '',
+    subject: '',
+    description: '',
+  });
+  const [courseEditError, setCourseEditError] = useState<string | null>(null);
+  const [isSavingCourse, setIsSavingCourse] = useState(false);
   const [analysisText, setAnalysisText] = useState('');
   const [analysisComplete, setAnalysisComplete] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -178,6 +195,45 @@ export default function CourseDetailPage() {
         setAnalysisError(getBusyStreamMessage(err, 'analysis'));
       },
     });
+  };
+
+  const openCourseEditor = () => {
+    if (!course) return;
+    setCourseEditValues({
+      name: course.name,
+      professor_name: course.professor_name || '',
+      subject: course.subject || '',
+      description: course.description || '',
+    });
+    setCourseEditError(null);
+    setIsEditCourseOpen(true);
+  };
+
+  const handleCourseUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = courseEditValues.name.trim();
+    if (!name) {
+      setCourseEditError('Course name is required.');
+      return;
+    }
+
+    setIsSavingCourse(true);
+    setCourseEditError(null);
+    try {
+      await coursesApi.update(courseId, {
+        name,
+        professor_name: courseEditValues.professor_name.trim() || null,
+        subject: courseEditValues.subject.trim() || null,
+        description: courseEditValues.description.trim() || null,
+      });
+      queryClient.invalidateQueries({ queryKey: ['course', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
+      setIsEditCourseOpen(false);
+    } catch (err: unknown) {
+      setCourseEditError(extractErrorMessage(err, 'Failed to update course. Please try again.'));
+    } finally {
+      setIsSavingCourse(false);
+    }
   };
 
   const handleCancelAnalysis = () => {
@@ -374,6 +430,15 @@ export default function CourseDetailPage() {
               <p className="text-gray-400 text-xs mt-1">{course.description}</p>
             )}
           </div>
+          <button
+            type="button"
+            onClick={openCourseEditor}
+            className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            aria-label="Edit course"
+            title="Edit course"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
@@ -699,6 +764,97 @@ export default function CourseDetailPage() {
           </Card>
         </div>
       )}
+
+      {/* Edit Course Modal */}
+      <Modal
+        isOpen={isEditCourseOpen}
+        onClose={() => {
+          if (!isSavingCourse) {
+            setIsEditCourseOpen(false);
+            setCourseEditError(null);
+          }
+        }}
+        title="Edit Course"
+        description="Keep the course details aligned with your current class."
+      >
+        <form onSubmit={handleCourseUpdate} className="space-y-4">
+          {courseEditError && (
+            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              {courseEditError}
+            </div>
+          )}
+          <div>
+            <label htmlFor="course_name" className="label-base">Course Name</label>
+            <input
+              id="course_name"
+              type="text"
+              className="input-base"
+              value={courseEditValues.name}
+              onChange={(event) =>
+                setCourseEditValues((current) => ({ ...current, name: event.target.value }))
+              }
+              maxLength={255}
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="course_professor" className="label-base">Professor Name</label>
+            <input
+              id="course_professor"
+              type="text"
+              className="input-base"
+              value={courseEditValues.professor_name}
+              onChange={(event) =>
+                setCourseEditValues((current) => ({
+                  ...current,
+                  professor_name: event.target.value,
+                }))
+              }
+              maxLength={255}
+            />
+          </div>
+          <div>
+            <label htmlFor="course_subject" className="label-base">Subject</label>
+            <input
+              id="course_subject"
+              type="text"
+              className="input-base"
+              value={courseEditValues.subject}
+              onChange={(event) =>
+                setCourseEditValues((current) => ({ ...current, subject: event.target.value }))
+              }
+              maxLength={255}
+            />
+          </div>
+          <div>
+            <label htmlFor="course_description" className="label-base">Description</label>
+            <textarea
+              id="course_description"
+              className="input-base resize-none"
+              rows={3}
+              value={courseEditValues.description}
+              onChange={(event) =>
+                setCourseEditValues((current) => ({
+                  ...current,
+                  description: event.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setIsEditCourseOpen(false)}
+              disabled={isSavingCourse}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" loading={isSavingCourse}>Save Changes</Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Generate Exam Modal */}
       <Modal

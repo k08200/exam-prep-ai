@@ -94,9 +94,9 @@ export const coursesApi = {
     id: string,
     data: Partial<{
       name: string;
-      description: string;
-      professor_name: string;
-      subject: string;
+      description: string | null;
+      professor_name: string | null;
+      subject: string | null;
     }>
   ) => api.put(`/courses/${id}`, data),
   delete: (id: string) => api.delete(`/courses/${id}`),
