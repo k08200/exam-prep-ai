@@ -393,7 +393,33 @@ def test_default_claude_model_is_valid_api_id() -> None:
     """Default model uses the Anthropic API model identifier, not a display name."""
     from app.core.config import settings
 
-    assert settings.CLAUDE_MODEL == "claude-opus-4-1-20250805"
+    assert settings.CLAUDE_MODEL == "claude-opus-4-8"
+
+
+def test_thinking_options_use_budget_for_legacy_models(monkeypatch) -> None:
+    """Legacy Claude 4 snapshots continue using explicit thinking budgets."""
+    from app.core.config import settings
+    from app.services.claude_service import _thinking_options
+
+    monkeypatch.setattr(settings, "CLAUDE_MODEL", "claude-opus-4-1-20250805")
+
+    assert _thinking_options(1234) == {
+        "thinking": {"type": "enabled", "budget_tokens": 1234},
+    }
+
+
+def test_thinking_options_use_adaptive_mode_for_current_models(monkeypatch) -> None:
+    """Current model families use adaptive thinking and configured effort."""
+    from app.core.config import settings
+    from app.services.claude_service import _thinking_options
+
+    monkeypatch.setattr(settings, "CLAUDE_MODEL", "claude-sonnet-5")
+    monkeypatch.setattr(settings, "CLAUDE_THINKING_EFFORT", "medium")
+
+    assert _thinking_options(1234) == {
+        "thinking": {"type": "adaptive"},
+        "output_config": {"effort": "medium"},
+    }
 
 
 def test_cors_origins_are_parsed_from_comma_separated_string(monkeypatch) -> None:

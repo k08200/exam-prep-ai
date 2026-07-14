@@ -242,6 +242,7 @@ npm run dev
 | CORS_ORIGINS | Comma-separated frontend origins allowed by the API | No (local defaults) |
 | MATERIAL_PROCESSING_STALE_MINUTES | Mark abandoned material parsing jobs failed after this many minutes | No (default: 30) |
 | MAX_UPLOAD_FILES | Maximum number of files per upload request | No (default: 10) |
-| CLAUDE_MODEL | Claude model ID | No (default: claude-opus-4-1-20250805) |
+| CLAUDE_MODEL | Claude model ID | No (default: claude-opus-4-8) |
 | THINKING_BUDGET_ANALYSIS | Thinking tokens for analysis | No (default: 30000) |
 | THINKING_BUDGET_GENERATION | Thinking tokens for generation | No (default: 10000) |
+| CLAUDE_THINKING_EFFORT | Adaptive thinking effort for current models | No (default: high) |

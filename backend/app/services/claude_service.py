@@ -2,11 +2,8 @@
 Claude API integration service.
 
 Extended thinking usage note:
-  The Anthropic API supports thinking with:
-    thinking={"type": "enabled", "budget_tokens": N}
-  There is NO "adaptive" type — we use "enabled" with an explicit budget.
-  The betas parameter "interleaved-thinking-2025-05-14" enables interleaved
-  thinking blocks between text blocks for more granular streaming.
+  Legacy Claude 4 snapshots use an explicit thinking budget. Current model
+  families use adaptive thinking with output_config effort controls.
 """
 import json
 import logging
@@ -20,6 +17,27 @@ from app.core.config import settings
 # Use AsyncAnthropic for non-blocking streaming in async FastAPI context
 
 logger = logging.getLogger(__name__)
+
+ADAPTIVE_THINKING_MODEL_PREFIXES = (
+    "claude-fable-5",
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+    "claude-sonnet-5",
+    "claude-mythos-",
+)
+
+
+def _thinking_options(budget_tokens: int) -> dict:
+    """Build thinking parameters for legacy and current Claude model families."""
+    model = settings.CLAUDE_MODEL.lower()
+    if model.startswith(ADAPTIVE_THINKING_MODEL_PREFIXES):
+        return {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": settings.CLAUDE_THINKING_EFFORT},
+        }
+    return {"thinking": {"type": "enabled", "budget_tokens": budget_tokens}}
 
 ANALYSIS_SYSTEM_PROMPT = """You are an expert educational analyst specializing in understanding professor exam styles and patterns. Your task is to deeply analyze course materials and extract the professor's examination philosophy, preferred question types, key concepts, and stylistic patterns.
 
@@ -130,18 +148,13 @@ class ClaudeService:
         input_tokens_used = 0
         raw_text = ""
 
-        # Async streaming with extended thinking.
-        # NOTE: thinking.type must be "enabled" — "adaptive" does not exist in the API.
+        # Async streaming with model-appropriate extended thinking settings.
         async with self.client.messages.stream(
             model=self.model,
             max_tokens=settings.THINKING_BUDGET_ANALYSIS + 8192,
-            thinking={
-                "type": "enabled",
-                "budget_tokens": settings.THINKING_BUDGET_ANALYSIS,
-            },
+            **_thinking_options(settings.THINKING_BUDGET_ANALYSIS),
             system=ANALYSIS_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
-            betas=["interleaved-thinking-2025-05-14"],
         ) as stream:
             async for event in stream:
                 event_type = type(event).__name__
@@ -251,13 +264,9 @@ class ClaudeService:
         async with self.client.messages.stream(
             model=self.model,
             max_tokens=settings.THINKING_BUDGET_GENERATION + question_count * 1000,
-            thinking={
-                "type": "enabled",
-                "budget_tokens": settings.THINKING_BUDGET_GENERATION,
-            },
+            **_thinking_options(settings.THINKING_BUDGET_GENERATION),
             system=GENERATION_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
-            betas=["interleaved-thinking-2025-05-14"],
         ) as stream:
             async for event in stream:
                 event_type = type(event).__name__

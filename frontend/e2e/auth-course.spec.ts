@@ -41,7 +41,18 @@ async function answerEveryQuestion(page: Page) {
     Array.from(new Set(inputs.map((input) => (input as HTMLInputElement).name)))
   );
   for (const name of radioNames) {
-    await page.locator(`input[type="radio"][name="${name}"]`).first().check({ force: true });
+    const input = page.locator(`input[type="radio"][name="${name}"]`).first();
+    await expect
+      .poll(
+        async () => {
+          if (!(await input.isChecked())) {
+            await input.click({ force: true });
+          }
+          return input.isChecked();
+        },
+        { timeout: 5_000 }
+      )
+      .toBe(true);
   }
 
   const textInputs = page.locator('input[type="text"]');

@@ -55,12 +55,12 @@ class Settings(BaseSettings):
     )
 
     # Claude model config
-    CLAUDE_MODEL: str = "claude-opus-4-1-20250805"
-    # Extended thinking budgets (tokens).
-    # NOTE: The API does not support thinking.type = "adaptive".
-    # We use {"type": "enabled", "budget_tokens": N} for explicit control.
+    CLAUDE_MODEL: str = "claude-opus-4-8"
+    # Extended thinking budgets (tokens) for legacy model snapshots.
+    # Current model families use adaptive thinking with CLAUDE_THINKING_EFFORT.
     THINKING_BUDGET_ANALYSIS: int = 30000  # for professor style analysis (deep)
     THINKING_BUDGET_GENERATION: int = 10000  # for exam question generation
+    CLAUDE_THINKING_EFFORT: str = "high"
 
     @property
     def cors_origins(self) -> list[str]:
