@@ -52,7 +52,7 @@ async function answerEveryQuestion(page: Page) {
     const input = page.locator(
       `input[type="radio"][name="${name}"][value="${value}"]`
     );
-    await input.check({ force: true });
+    await input.check();
     await expect(input).toBeChecked({ timeout: 10_000 });
   }
 

@@ -19,11 +19,13 @@ from app.models.user import User
 from app.schemas.analysis import AnalysisResponse, ConceptItem, ProfessorTerm, QuestionTypeDistribution
 from app.services import get_claude_service
 from app.services.material_quality import is_usable_extracted_text
+from app.services.ai_usage_service import AIUsageService
 
 router = APIRouter(tags=["analysis"])
 claude_service = get_claude_service()
 _analysis_course_locks: set[uuid.UUID] = set()
 logger = logging.getLogger(__name__)
+ai_usage_service = AIUsageService()
 MATERIAL_SEPARATOR = "\n\n---\n\n"
 TRUNCATION_MARKER = "\n[Additional material text omitted due to the analysis input limit.]\n"
 
@@ -290,6 +292,13 @@ async def run_analysis(
             detail="Analysis is already running for this course.",
         )
     _analysis_course_locks.add(course_id)
+
+    try:
+        await ai_usage_service.reserve(db, current_user.id, analyses=1)
+        await db.commit()
+    except Exception:
+        _analysis_course_locks.discard(course_id)
+        raise
 
     materials_text, input_was_truncated = _build_materials_text(usable_materials)
     course_name = course.name

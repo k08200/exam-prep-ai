@@ -150,7 +150,9 @@ export default function ExamPage() {
     }
   };
 
-  if (authLoading || examLoading) {
+  // Do not accept answers until the local draft has been restored. Otherwise a
+  // delayed storage read can overwrite a just-entered answer with an empty draft.
+  if (authLoading || examLoading || !answersHydrated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">

@@ -2,6 +2,7 @@
 TDD tests for authentication endpoints.
 """
 import json
+import uuid
 
 import pytest
 from httpx import AsyncClient
@@ -199,6 +200,35 @@ async def test_get_me_invalid_token_returns_401(client: AsyncClient) -> None:
         headers={"Authorization": "Bearer this.is.invalid"},
     )
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_ai_usage_starts_at_zero_with_configured_limits(
+    client: AsyncClient,
+) -> None:
+    """A signed-in user can inspect today's AI work allowance before using it."""
+    email = f"usage-zero-{uuid.uuid4()}@example.com"
+    await client.post(
+        "/auth/register",
+        json={"email": email, "password": "securepass123"},
+    )
+    login = await client.post(
+        "/auth/login",
+        data={"username": email, "password": "securepass123"},
+    )
+    resp = await client.get(
+        "/auth/me/ai-usage",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["analyses_used"] == 0
+    assert data["questions_generated"] == 0
+    assert data["responses_graded"] == 0
+    assert data["analyses_limit"] > 0
+    assert data["questions_limit"] > 0
+    assert data["grades_limit"] > 0
 
 
 @pytest.mark.asyncio

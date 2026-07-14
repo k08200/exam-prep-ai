@@ -3,6 +3,7 @@ from app.models.course import Course
 from app.models.material import Material
 from app.models.analysis import ProfessorAnalysis
 from app.models.exam import Exam, ExamQuestion, StudentResponse, ConceptTracking
+from app.models.ai_usage import DailyAIUsage
 
 __all__ = [
     "User",
@@ -13,4 +14,5 @@ __all__ = [
     "ExamQuestion",
     "StudentResponse",
     "ConceptTracking",
+    "DailyAIUsage",
 ]

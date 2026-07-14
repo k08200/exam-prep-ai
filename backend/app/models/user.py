@@ -44,3 +44,6 @@ class User(Base):
     concept_tracking: Mapped[list["ConceptTracking"]] = relationship(  # noqa: F821
         "ConceptTracking", back_populates="user", cascade="all, delete-orphan"
     )
+    daily_ai_usage: Mapped[list["DailyAIUsage"]] = relationship(  # noqa: F821
+        "DailyAIUsage", back_populates="user", cascade="all, delete-orphan"
+    )

@@ -228,6 +228,34 @@ async def test_analysis_conflict_when_course_already_running(
 
 
 @pytest.mark.asyncio
+async def test_analysis_daily_ai_limit_blocks_before_provider_call(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    """A depleted analysis allowance returns 429 without starting an AI stream."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "MAX_DAILY_AI_ANALYSES", 0)
+    course_id = uuid.UUID(test_course["id"])
+    await _create_completed_material(db_session, course_id)
+    await db_session.commit()
+
+    provider = AsyncMock()
+    with patch("app.routers.analysis.claude_service.analyze_professor_style", provider):
+        resp = await client.post(
+            f"/courses/{course_id}/analysis",
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 429
+    assert "daily ai analysis limit" in resp.json()["detail"].lower()
+    provider.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_analysis_lock_released_after_completion(
     client: AsyncClient,
     auth_headers: dict,

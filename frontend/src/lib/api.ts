@@ -1,6 +1,6 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import type { RuntimeHealth } from '@/types';
+import type { AIUsage, RuntimeHealth } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
@@ -72,6 +72,7 @@ export const authApi = {
     });
   },
   me: () => api.get('/auth/me'),
+  aiUsage: () => api.get<AIUsage>('/auth/me/ai-usage'),
   updateMe: (data: { full_name?: string }) => api.patch('/auth/me', data),
   changePassword: (current_password: string, new_password: string) =>
     api.patch('/auth/me/password', { current_password, new_password }),

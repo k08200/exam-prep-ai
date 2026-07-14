@@ -11,6 +11,7 @@
 - Keep `EXAM_GENERATION_STALE_MINUTES` long enough for the slowest expected Claude generation so an active stream is not reclaimed.
 - Mount persistent storage for `UPLOAD_DIR`.
 - Set `MAX_USER_STORAGE_BYTES` to a per-user limit appropriate for the disk available to your users.
+- Set `MAX_DAILY_AI_ANALYSES`, `MAX_DAILY_AI_GENERATED_QUESTIONS`, and `MAX_DAILY_AI_GRADES` to a budget that matches the configured Claude model and account plan. Limits reset at midnight UTC and are reserved before provider work starts.
 - Tune `REQUEST_TIMEOUT_SECONDS`, `AI_STREAM_HEARTBEAT_SECONDS`, and `AI_STREAM_EVENT_TIMEOUT_SECONDS` for your platform timeout limits.
 
 ## AI Mode
@@ -29,6 +30,9 @@ USE_MOCK_CLAUDE=false
 ANTHROPIC_API_KEY=your_anthropic_key
 CLAUDE_MODEL=claude-opus-4-8
 CLAUDE_THINKING_EFFORT=high
+MAX_DAILY_AI_ANALYSES=10
+MAX_DAILY_AI_GENERATED_QUESTIONS=200
+MAX_DAILY_AI_GRADES=300
 ```
 
 The backend now fails fast if `USE_MOCK_CLAUDE=false` and `ANTHROPIC_API_KEY` is empty. Confirm the active mode with:
@@ -112,7 +116,7 @@ Before routing traffic:
 - `/health` returns `status: ok`.
 - `/ready` returns `status: ready`, `database: ok`, and `upload_dir: ok`.
 - `alembic upgrade head` has completed.
-- The `0003_user_token_version` migration is applied so concurrent draft generations are rejected safely and password changes invalidate existing sessions.
+- The `0004_daily_ai_usage` migration is applied so daily AI limits, concurrent draft-generation protection, and password session invalidation work correctly.
 - Frontend build points to the production API URL.
 - `USE_MOCK_CLAUDE` is false only when `ANTHROPIC_API_KEY` is configured.
 - Upload storage is persistent across restarts.

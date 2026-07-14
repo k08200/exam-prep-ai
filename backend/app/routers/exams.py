@@ -44,12 +44,14 @@ from app.schemas.exam import (
 )
 from app.services.analytics_service import AnalyticsService
 from app.services import get_claude_service
+from app.services.ai_usage_service import AIUsageService
 
 router = APIRouter(tags=["exams"])
 claude_service = get_claude_service()
 analytics_service = AnalyticsService()
 _exam_generation_course_locks: set[uuid.UUID] = set()
 logger = logging.getLogger(__name__)
+ai_usage_service = AIUsageService()
 
 
 async def mark_stale_draft_exams(
@@ -384,6 +386,11 @@ async def create_exam(
     }
 
     try:
+        await ai_usage_service.reserve(
+            db,
+            current_user.id,
+            questions=exam_create.question_count,
+        )
         exam = Exam(
             course_id=course_id,
             user_id=user_id,
@@ -594,6 +601,12 @@ async def submit_exam(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Submitted answers include questions that do not belong to this exam",
         )
+
+    await ai_usage_service.reserve(
+        db,
+        current_user.id,
+        grades=len(questions_by_id),
+    )
 
     # Fetch existing professor analysis for grading context
     analysis_result = await db.execute(

@@ -14,6 +14,16 @@ export interface RuntimeHealth {
   claude_configured: boolean;
 }
 
+export interface AIUsage {
+  usage_date: string;
+  analyses_used: number;
+  analyses_limit: number;
+  questions_generated: number;
+  questions_limit: number;
+  responses_graded: number;
+  grades_limit: number;
+}
+
 export interface Course {
   id: string;
   user_id: string;

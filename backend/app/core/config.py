@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     AUTH_RATE_LIMIT_WINDOW_SECONDS: int = 300
     AI_STREAM_HEARTBEAT_SECONDS: float = 15.0
     AI_STREAM_EVENT_TIMEOUT_SECONDS: float = 180.0
+    MAX_DAILY_AI_ANALYSES: int = 10
+    MAX_DAILY_AI_GENERATED_QUESTIONS: int = 200
+    MAX_DAILY_AI_GRADES: int = 300
 
     # Set to true to use mock responses (no API key required)
     USE_MOCK_CLAUDE: bool = False
@@ -106,6 +109,12 @@ class Settings(BaseSettings):
             raise RuntimeError("Production MAX_USER_STORAGE_BYTES must be positive.")
         if self.EXAM_GENERATION_STALE_MINUTES <= 0:
             raise RuntimeError("Production EXAM_GENERATION_STALE_MINUTES must be positive.")
+        if self.MAX_DAILY_AI_ANALYSES <= 0:
+            raise RuntimeError("Production MAX_DAILY_AI_ANALYSES must be positive.")
+        if self.MAX_DAILY_AI_GENERATED_QUESTIONS <= 0:
+            raise RuntimeError("Production MAX_DAILY_AI_GENERATED_QUESTIONS must be positive.")
+        if self.MAX_DAILY_AI_GRADES <= 0:
+            raise RuntimeError("Production MAX_DAILY_AI_GRADES must be positive.")
 
 
 settings = Settings()

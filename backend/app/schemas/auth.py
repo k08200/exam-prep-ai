@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -37,6 +37,16 @@ class UserUpdate(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str = Field(min_length=1)
     new_password: str = Field(min_length=8, max_length=128)
+
+
+class AIUsageResponse(BaseModel):
+    usage_date: date
+    analyses_used: int
+    analyses_limit: int
+    questions_generated: int
+    questions_limit: int
+    responses_graded: int
+    grades_limit: int
 
 
 class TokenData(BaseModel):

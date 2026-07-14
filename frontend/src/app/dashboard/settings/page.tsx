@@ -1,14 +1,16 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useQuery } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AlertCircle, CheckCircle, Download, Lock, User } from 'lucide-react';
+import { AlertCircle, CheckCircle, Download, Gauge, Lock, User } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
 import { authApi, extractErrorMessage } from '@/lib/api';
+import type { AIUsage } from '@/types';
 
 const profileSchema = z.object({
   full_name: z.string().max(255).optional(),
@@ -38,6 +40,10 @@ export default function SettingsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const { data: aiUsage } = useQuery<AIUsage>({
+    queryKey: ['aiUsage'],
+    queryFn: async () => (await authApi.aiUsage()).data,
+  });
 
   const {
     register,
@@ -274,6 +280,45 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {aiUsage && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Gauge className="h-4 w-4 text-gray-500" />
+              <h2 className="text-sm font-semibold text-gray-900">Today&apos;s AI Allowance</h2>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {[
+                ['Analyses', aiUsage.analyses_used, aiUsage.analyses_limit],
+                ['Questions', aiUsage.questions_generated, aiUsage.questions_limit],
+                ['Answers graded', aiUsage.responses_graded, aiUsage.grades_limit],
+              ].map(([label, used, limit]) => {
+                const usage = Number(used);
+                const maximum = Number(limit);
+                const percent = Math.min((usage / maximum) * 100, 100);
+                return (
+                  <div key={String(label)} className="border border-gray-200 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500">{label}</span>
+                      <span className="text-sm font-semibold text-gray-900">{usage} / {maximum}</span>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden bg-gray-100">
+                      <div
+                        className={percent >= 90 ? 'h-full bg-red-500' : 'h-full bg-emerald-500'}
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-xs text-gray-500">Limits reset at midnight UTC. AI work is counted when a request starts.</p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Account Info Card */}
       <Card>

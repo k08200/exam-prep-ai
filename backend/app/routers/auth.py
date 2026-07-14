@@ -22,10 +22,12 @@ from app.models.analysis import ProfessorAnalysis
 from app.models.exam import ConceptTracking, Exam, ExamQuestion, StudentResponse
 from app.models.material import Material
 from app.models.user import User
-from app.schemas.auth import Token, UserCreate, UserResponse, UserUpdate, PasswordChange
+from app.schemas.auth import AIUsageResponse, Token, UserCreate, UserResponse, UserUpdate, PasswordChange
+from app.services.ai_usage_service import AIUsageService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 _failed_login_attempts: dict[str, list[float]] = {}
+ai_usage_service = AIUsageService()
 
 
 def _normalize_email(email: str) -> str:
@@ -124,6 +126,24 @@ async def login(
 async def get_me(current_user: User = Depends(get_current_user)) -> UserResponse:
     """Return the currently authenticated user's profile."""
     return UserResponse.model_validate(current_user)
+
+
+@router.get("/me/ai-usage", response_model=AIUsageResponse)
+async def get_ai_usage(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AIUsageResponse:
+    """Return today's reserved AI work and the configured account limits."""
+    usage = await ai_usage_service.get_snapshot(db, current_user.id)
+    return AIUsageResponse(
+        usage_date=usage.usage_date,
+        analyses_used=usage.analyses_used,
+        analyses_limit=settings.MAX_DAILY_AI_ANALYSES,
+        questions_generated=usage.questions_generated,
+        questions_limit=settings.MAX_DAILY_AI_GENERATED_QUESTIONS,
+        responses_graded=usage.responses_graded,
+        grades_limit=settings.MAX_DAILY_AI_GRADES,
+    )
 
 
 @router.get("/me/export")

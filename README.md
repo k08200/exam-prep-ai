@@ -94,7 +94,7 @@ The dev override bind-mounts `backend/` and `frontend/` into the containers:
 
 ## Runtime Safety
 
-The backend adds a request ID to every response (`X-Request-ID`), logs request outcomes, caps request setup time with `REQUEST_TIMEOUT_SECONDS`, and rate-limits repeated failed logins with `AUTH_RATE_LIMIT_MAX_FAILURES` over `AUTH_RATE_LIMIT_WINDOW_SECONDS`. AI streams send heartbeat events and fail with a retryable timeout after `AI_STREAM_EVENT_TIMEOUT_SECONDS` without upstream progress. Uploads also validate obvious extension/content-type mismatches before saving files. Interrupted material processing and exam generation drafts are recovered after their configured stale window.
+The backend adds a request ID to every response (`X-Request-ID`), logs request outcomes, caps request setup time with `REQUEST_TIMEOUT_SECONDS`, and rate-limits repeated failed logins with `AUTH_RATE_LIMIT_MAX_FAILURES` over `AUTH_RATE_LIMIT_WINDOW_SECONDS`. AI streams send heartbeat events and fail with a retryable timeout after `AI_STREAM_EVENT_TIMEOUT_SECONDS` without upstream progress. Per-account daily analysis, question-generation, and grading limits are reserved in PostgreSQL before provider work starts, so limits also hold across multiple backend instances. Uploads also validate obvious extension/content-type mismatches before saving files. Interrupted material processing and exam generation drafts are recovered after their configured stale window.
 
 ## Architecture
 
@@ -261,6 +261,9 @@ npm run dev
 | MAX_UPLOAD_FILES | Maximum number of files per upload request | No (default: 10) |
 | MAX_USER_STORAGE_BYTES | Maximum cumulative uploaded-file storage per account | No (default: 2147483648 / 2 GB) |
 | MAX_ANALYSIS_INPUT_CHARS | Maximum extracted material characters sent to Claude per analysis | No (default: 600000) |
+| MAX_DAILY_AI_ANALYSES | Maximum analysis runs per account per UTC day | No (default: 10) |
+| MAX_DAILY_AI_GENERATED_QUESTIONS | Maximum generated questions per account per UTC day | No (default: 200) |
+| MAX_DAILY_AI_GRADES | Maximum graded answers per account per UTC day | No (default: 300) |
 | CLAUDE_MODEL | Claude model ID | No (default: claude-opus-4-8) |
 | THINKING_BUDGET_ANALYSIS | Thinking tokens for analysis | No (default: 30000) |
 | THINKING_BUDGET_GENERATION | Thinking tokens for generation | No (default: 10000) |

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.analytics_service import AnalyticsService
 from app.services.file_parser import FileParser
+from app.services.ai_usage_service import AIUsageService
 
 
 @pytest.fixture
@@ -19,6 +20,48 @@ def analytics() -> AnalyticsService:
 @pytest.fixture
 def parser() -> FileParser:
     return FileParser()
+
+
+@pytest.mark.asyncio
+async def test_ai_usage_reservation_tracks_each_work_type_and_enforces_limits(
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    """Daily AI reservations are isolated by work type and reject overflow before a call."""
+    from sqlalchemy import select
+
+    from app.core.config import settings
+    from app.models.user import User
+    from app.routers.auth import register
+    from app.schemas.auth import UserCreate
+
+    monkeypatch.setattr(settings, "MAX_DAILY_AI_ANALYSES", 1)
+    monkeypatch.setattr(settings, "MAX_DAILY_AI_GENERATED_QUESTIONS", 3)
+    monkeypatch.setattr(settings, "MAX_DAILY_AI_GRADES", 2)
+    await register(
+        UserCreate(email="usage-service@example.com", password="securepass123"),
+        db=db_session,
+    )
+    user = (await db_session.execute(
+        select(User).where(User.email == "usage-service@example.com")
+    )).scalar_one()
+    service = AIUsageService()
+
+    reserved = await service.reserve(
+        db_session, user.id, analyses=1, questions=3, grades=2
+    )
+    assert reserved.analyses_used == 1
+    assert reserved.questions_generated == 3
+    assert reserved.responses_graded == 2
+
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.reserve(db_session, user.id, questions=1)
+    assert exc_info.value.status_code == 429
+
+    snapshot = await service.get_snapshot(db_session, user.id)
+    assert snapshot == reserved
 
 
 # ── AnalyticsService ───────────────────────────────────────────────────────
