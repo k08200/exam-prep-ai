@@ -1,11 +1,13 @@
 import asyncio
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +34,8 @@ from app.schemas.exam import (
     ExamResponse,
     ExamResult,
     ExamSubmit,
+    GeneratedQuestion,
+    GradeResponse,
     MultipleChoiceOption,
     QuestionResponse,
     QuestionResult,
@@ -43,6 +47,7 @@ router = APIRouter(tags=["exams"])
 claude_service = get_claude_service()
 analytics_service = AnalyticsService()
 _exam_generation_course_locks: set[uuid.UUID] = set()
+logger = logging.getLogger(__name__)
 
 
 async def _assert_course_ownership(
@@ -167,20 +172,35 @@ async def _stream_exam_generation_with_session(
                     yield _sse_event(event)
                     return
                 elif event_type == "question":
-                    q_data = event.get("question", {})
-                    tokens = event.get("tokens", 0)
+                    try:
+                        q_data = GeneratedQuestion.model_validate(event.get("question"))
+                        tokens = max(int(event.get("tokens", 0)), 0)
+                    except (ValidationError, TypeError, ValueError) as exc:
+                        logger.warning(
+                            "invalid_generated_question",
+                            extra={"exam_id": str(exam_id), "error": str(exc)},
+                        )
+                        await _discard_draft_exam(db, exam_id)
+                        yield _sse_event(
+                            {
+                                "type": "error",
+                                "content": "AI returned an invalid exam question. Please try again.",
+                                "retryable": True,
+                            }
+                        )
+                        return
                     total_tokens += tokens
 
                     question = ExamQuestion(
                         exam_id=exam_id,
                         question_number=question_number,
-                        question_text=q_data.get("question_text", ""),
-                        question_type=q_data.get("question_type", "essay"),
-                        choices=q_data.get("choices"),
-                        correct_answer=q_data.get("correct_answer", ""),
-                        explanation=q_data.get("explanation", ""),
-                        concepts=q_data.get("concepts", []),
-                        difficulty=q_data.get("difficulty", "medium"),
+                        question_text=q_data.question_text,
+                        question_type=q_data.question_type,
+                        choices=[choice.model_dump() for choice in q_data.choices] if q_data.choices else None,
+                        correct_answer=q_data.correct_answer,
+                        explanation=q_data.explanation,
+                        concepts=q_data.concepts,
+                        difficulty=q_data.difficulty,
                         tokens_used=tokens,
                     )
                     db.add(question)
@@ -534,25 +554,50 @@ async def submit_exam(
     for question in sorted(questions_by_id.values(), key=lambda q: q.question_number):
         student_answer = answers_map.get(question.id, "")
 
-        # Grade the response using Claude
-        grade = await claude_service.grade_response(
-            question={
-                "question_text": question.question_text,
-                "question_type": question.question_type,
-                "choices": question.choices,
-                "correct_answer": question.correct_answer,
-                "explanation": question.explanation,
-                "concepts": question.concepts,
-                "difficulty": question.difficulty,
-            },
-            student_answer=student_answer,
-            professor_context=professor_context,
-        )
+        # Validate every provider response before mutating grading state.
+        try:
+            grade = GradeResponse.model_validate(
+                await claude_service.grade_response(
+                    question={
+                        "question_text": question.question_text,
+                        "question_type": question.question_type,
+                        "choices": question.choices,
+                        "correct_answer": question.correct_answer,
+                        "explanation": question.explanation,
+                        "concepts": question.concepts,
+                        "difficulty": question.difficulty,
+                    },
+                    student_answer=student_answer,
+                    professor_context=professor_context,
+                )
+            )
+        except (ValidationError, TypeError, ValueError, KeyError) as exc:
+            logger.warning(
+                "invalid_grading_output",
+                extra={
+                    "exam_id": str(exam_id),
+                    "question_id": str(question.id),
+                    "error": str(exc),
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="AI grading returned an invalid response. Please try again.",
+            ) from exc
+        except Exception as exc:
+            logger.exception(
+                "grading_provider_error",
+                extra={"exam_id": str(exam_id), "question_id": str(question.id)},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="AI grading is temporarily unavailable. Please try again.",
+            ) from exc
 
-        is_correct = grade["is_correct"]
-        score = grade["score"]
-        feedback = grade["feedback"]
-        grading_tokens += grade.get("tokens_used", 0)
+        is_correct = grade.is_correct
+        score = grade.score
+        feedback = grade.feedback
+        grading_tokens += grade.tokens_used
 
         if is_correct:
             correct_count += 1

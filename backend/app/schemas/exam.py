@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ExamCreate(BaseModel):
     title: str = Field(min_length=1, max_length=512)
-    question_count: int = Field(ge=1, le=100)
+    question_count: int = Field(ge=1, le=30)
     mode: str = Field(default="standard", pattern="^(standard|cram)$")
     topics: list[str] | None = None
 
@@ -14,8 +15,41 @@ class ExamCreate(BaseModel):
 
 
 class MultipleChoiceOption(BaseModel):
-    label: str  # "A", "B", "C", "D"
-    text: str
+    label: str = Field(min_length=1, max_length=10)  # "A", "B", "C", "D"
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class GeneratedQuestion(BaseModel):
+    """Strict contract for one AI-generated question before persistence."""
+
+    question_text: str = Field(min_length=1, max_length=20000)
+    question_type: Literal["multiple_choice", "essay", "calculation", "true_false"]
+    choices: list[MultipleChoiceOption] | None = None
+    correct_answer: str = Field(min_length=1, max_length=20000)
+    explanation: str = Field(min_length=1, max_length=20000)
+    concepts: list[str] = Field(default_factory=list, max_length=30)
+    difficulty: Literal["easy", "medium", "hard"]
+
+    @model_validator(mode="after")
+    def validate_choices(self) -> "GeneratedQuestion":
+        if self.question_type == "multiple_choice" and not self.choices:
+            raise ValueError("Multiple-choice questions require choices")
+        if self.choices and len(self.choices) < 2:
+            raise ValueError("Questions with choices require at least two options")
+        if self.choices:
+            labels = [choice.label.strip().upper() for choice in self.choices]
+            if len(labels) != len(set(labels)):
+                raise ValueError("Question choices must have unique labels")
+        return self
+
+
+class GradeResponse(BaseModel):
+    """Strict contract for one AI grading response."""
+
+    is_correct: bool
+    score: float = Field(ge=0.0, le=1.0)
+    feedback: str = Field(min_length=1, max_length=20000)
+    tokens_used: int = Field(default=0, ge=0)
 
 
 class QuestionResponse(BaseModel):

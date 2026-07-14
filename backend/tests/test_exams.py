@@ -340,6 +340,41 @@ async def test_create_exam_mismatched_question_count_rolls_back(
 
 
 @pytest.mark.asyncio
+async def test_create_exam_invalid_question_rolls_back_draft(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Malformed AI questions must not be persisted as a usable exam."""
+    course_id = test_course["id"]
+    await _create_analysis(db_session, uuid.UUID(course_id))
+    await db_session.commit()
+
+    async def invalid_question_generator():
+        yield {
+            "type": "question",
+            "question": {"question_text": "missing required fields"},
+            "tokens": 100,
+        }
+
+    with patch(
+        "app.routers.exams.claude_service.generate_exam_questions",
+        return_value=invalid_question_generator(),
+    ):
+        resp = await client.post(
+            f"/courses/{course_id}/exams",
+            json={"title": "Invalid Question", "question_count": 1, "mode": "standard"},
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    assert "invalid exam question" in resp.text
+    result = await db_session.execute(select(Exam).where(Exam.title == "Invalid Question"))
+    assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
 async def test_create_exam_stream_timeout_rolls_back_draft(
     client: AsyncClient,
     auth_headers: dict,
@@ -529,6 +564,21 @@ async def test_create_exam_without_analysis_fails(
 
 
 @pytest.mark.asyncio
+async def test_create_exam_rejects_oversized_exam_request(
+    client: AsyncClient,
+    auth_headers: dict,
+) -> None:
+    """The API cap matches the UI and keeps provider output within safe limits."""
+    resp = await client.post(
+        f"/courses/{uuid.uuid4()}/exams",
+        json={"title": "Too Large", "question_count": 31, "mode": "standard"},
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_create_exam_blank_title_returns_422(
     client: AsyncClient,
     auth_headers: dict,
@@ -624,6 +674,36 @@ async def test_submit_exam_calculates_score(
     assert result["score"] == 100.0
     assert result["correct_count"] == 2
     assert result["total_questions"] == 2
+
+
+@pytest.mark.asyncio
+async def test_submit_invalid_grading_response_returns_502_and_keeps_exam_active(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Malformed AI grading must leave the exam retryable instead of corrupting results."""
+    course_id = test_course["id"]
+    exam_id, q_ids = await _create_exam_with_questions(
+        client, auth_headers, course_id, db_session
+    )
+
+    with patch(
+        "app.routers.exams.claude_service.grade_response",
+        new=AsyncMock(return_value={"score": "not-a-score"}),
+    ):
+        resp = await client.post(
+            f"/exams/{exam_id}/submit",
+            json={"answers": [{"question_id": q_ids[0], "student_answer": "A"}]},
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 502
+    assert "invalid response" in resp.json()["detail"]
+    await db_session.rollback()
+    exam_result = await db_session.execute(select(Exam).where(Exam.id == uuid.UUID(exam_id)))
+    assert exam_result.scalar_one().status == "active"
 
 
 @pytest.mark.asyncio
