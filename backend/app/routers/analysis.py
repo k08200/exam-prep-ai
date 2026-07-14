@@ -1,6 +1,7 @@
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,7 +18,12 @@ from app.core.sse import iter_with_heartbeat, sse_event
 from app.models.analysis import ProfessorAnalysis
 from app.models.analysis_run import AnalysisRun
 from app.models.course import Course
-from app.models.material import Material, PROCESSING_STATUS_COMPLETED
+from app.models.material import (
+    Material,
+    PROCESSING_STATUS_COMPLETED,
+    PROCESSING_STATUS_PENDING,
+    PROCESSING_STATUS_PROCESSING,
+)
 from app.models.user import User
 from app.schemas.analysis import AnalysisResponse, ConceptItem, ProfessorTerm, QuestionTypeDistribution
 from app.services import get_claude_service
@@ -30,6 +36,7 @@ logger = logging.getLogger(__name__)
 ai_usage_service = AIUsageService()
 MATERIAL_SEPARATOR = "\n\n---\n\n"
 TRUNCATION_MARKER = "\n[Additional material text omitted due to the analysis input limit.]\n"
+MaterialSnapshot = tuple[tuple[uuid.UUID, str, str], ...]
 
 
 def _build_materials_text(materials: list[Material]) -> tuple[str, bool]:
@@ -65,6 +72,33 @@ def _build_materials_text(materials: list[Material]) -> tuple[str, bool]:
         truncated = True
 
     return MATERIAL_SEPARATOR.join(sections), truncated
+
+
+def _material_snapshot(materials: list[Material]) -> MaterialSnapshot:
+    """Capture the material state that an in-flight analysis is based on."""
+    entries = [
+        (
+            material.id,
+            material.processing_status,
+            sha256((material.extracted_text or "").encode("utf-8")).hexdigest(),
+        )
+        for material in materials
+    ]
+    return tuple(sorted(entries))
+
+
+async def _materials_still_match(
+    course_id: uuid.UUID,
+    expected_snapshot: MaterialSnapshot,
+    db: AsyncSession,
+) -> bool:
+    """Ensure analysis output is never saved for a changed material set."""
+    result = await db.execute(
+        select(Material)
+        .where(Material.course_id == course_id)
+        .order_by(Material.id.asc())
+    )
+    return _material_snapshot(list(result.scalars().all())) == expected_snapshot
 
 
 def _validate_analysis_payload(payload: dict) -> dict:
@@ -139,6 +173,7 @@ async def _stream_analysis(
     course_name: str,
     professor_name: str,
     materials_text: str,
+    materials_snapshot: MaterialSnapshot,
     input_was_truncated: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Internal generator: stream SSE events for professor analysis."""
@@ -223,6 +258,19 @@ async def _stream_analysis(
 
         async with AsyncSessionLocal() as db:
             try:
+                if not await _materials_still_match(course_id, materials_snapshot, db):
+                    yield sse_event(
+                        {
+                            "type": "error",
+                            "content": (
+                                "Course materials changed while analysis was running. "
+                                "Run analysis again to include the latest materials."
+                            ),
+                            "retryable": True,
+                        }
+                    )
+                    return
+
                 existing_result = await db.execute(
                     select(ProfessorAnalysis).where(ProfessorAnalysis.course_id == course_id)
                 )
@@ -285,12 +333,31 @@ async def run_analysis(
     course = await _assert_course_ownership(course_id, current_user.id, db)
 
     result = await db.execute(
-        select(Material).where(
-            Material.course_id == course_id,
-            Material.processing_status == PROCESSING_STATUS_COMPLETED,
-        ).order_by(Material.created_at.asc())
+        select(Material)
+        .where(Material.course_id == course_id)
+        .order_by(Material.created_at.asc())
     )
-    completed_materials = result.scalars().all()
+    course_materials = list(result.scalars().all())
+    completed_materials = [
+        material
+        for material in course_materials
+        if material.processing_status == PROCESSING_STATUS_COMPLETED
+    ]
+    processing_materials = [
+        material
+        for material in course_materials
+        if material.processing_status
+        in {PROCESSING_STATUS_PENDING, PROCESSING_STATUS_PROCESSING}
+    ]
+
+    if processing_materials:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Material processing is still in progress. Wait for all files to finish "
+                "before running analysis."
+            ),
+        )
 
     if not completed_materials:
         raise HTTPException(
@@ -327,6 +394,7 @@ async def run_analysis(
         raise
 
     materials_text, input_was_truncated = _build_materials_text(usable_materials)
+    materials_snapshot = _material_snapshot(course_materials)
     course_name = course.name
     professor_name = course.professor_name or "Unknown Professor"
 
@@ -336,6 +404,7 @@ async def run_analysis(
             course_name,
             professor_name,
             materials_text,
+            materials_snapshot,
             input_was_truncated=input_was_truncated,
         ),
         media_type="text/event-stream",

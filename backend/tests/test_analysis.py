@@ -253,6 +253,38 @@ async def test_analysis_daily_ai_limit_blocks_before_provider_call(
 
 
 @pytest.mark.asyncio
+async def test_analysis_waits_for_all_material_processing_before_provider_call(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Analysis refuses partial evidence while another course file is still processing."""
+    course_id = uuid.UUID(test_course["id"])
+    await _create_completed_material(db_session, course_id)
+    db_session.add(
+        Material(
+            course_id=course_id,
+            filename="still-processing.pdf",
+            original_filename="still-processing.pdf",
+            file_type="pdf",
+            file_path="/tmp/still-processing.pdf",
+            file_size=1024,
+            processing_status="processing",
+        )
+    )
+    await db_session.commit()
+
+    provider = AsyncMock()
+    with patch("app.routers.analysis.claude_service.analyze_professor_style", provider):
+        response = await client.post(f"/courses/{course_id}/analysis", headers=auth_headers)
+
+    assert response.status_code == 409
+    assert "processing is still in progress" in response.json()["detail"]
+    provider.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_analysis_lock_released_after_completion(
     client: AsyncClient,
     auth_headers: dict,
@@ -304,6 +336,48 @@ async def test_analysis_lock_released_after_stream_error(
     assert "provider busy" in resp.text
     run = await db_session.get(AnalysisRun, course_id)
     assert run is None
+
+
+@pytest.mark.asyncio
+async def test_analysis_does_not_save_when_materials_change_mid_stream(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """A result based on an outdated material set is discarded instead of persisted."""
+    course_id = uuid.UUID(test_course["id"])
+    await _create_completed_material(db_session, course_id)
+    await db_session.commit()
+
+    async def materials_change_generator():
+        yield {"type": "thinking", "content": "Analysing...", "tokens": 1}
+        db_session.add(
+            Material(
+                course_id=course_id,
+                filename="new.pdf",
+                original_filename="new.pdf",
+                file_type="pdf",
+                file_path="/tmp/new.pdf",
+                file_size=1024,
+                processing_status="pending",
+            )
+        )
+        await db_session.commit()
+        yield {"type": "complete", "analysis": MOCK_ANALYSIS, "tokens": 10}
+
+    with patch(
+        "app.routers.analysis.claude_service.analyze_professor_style",
+        return_value=materials_change_generator(),
+    ):
+        response = await client.post(f"/courses/{course_id}/analysis", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert "materials changed while analysis was running" in response.text
+    result = await db_session.execute(
+        select(ProfessorAnalysis).where(ProfessorAnalysis.course_id == course_id)
+    )
+    assert result.scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio

@@ -145,6 +145,10 @@ export default function CourseDetailPage() {
       setAnalysisError('Wait for at least one material to finish processing before analysis.');
       return;
     }
+    if (course.processing_material_count > 0) {
+      setAnalysisError('Wait for all material processing to finish before analysis.');
+      return;
+    }
 
     setAnalysisText('');
     setAnalysisError(null);
@@ -467,6 +471,12 @@ export default function CourseDetailPage() {
                     variant="outline"
                     onClick={handleStartAnalysis}
                     loading={isAnalyzing}
+                    disabled={processingMaterialCount > 0}
+                    title={
+                      processingMaterialCount > 0
+                        ? 'Wait for all materials to finish processing'
+                        : undefined
+                    }
                   >
                     <RefreshCw className="h-4 w-4" />
                     Re-analyze
@@ -562,14 +572,27 @@ export default function CourseDetailPage() {
                     </div>
                   )}
 
-                  {completedMaterialCount === 0 ? (
+                  {processingMaterialCount > 0 ? (
+                    <div className="space-y-3">
+                      <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 inline-block">
+                        Wait for all materials to finish processing before analysis
+                      </p>
+                      <div>
+                        <Button
+                          variant="secondary"
+                          onClick={() => setActiveTab('materials')}
+                        >
+                          <Upload className="h-4 w-4" />
+                          Review Materials
+                        </Button>
+                      </div>
+                    </div>
+                  ) : completedMaterialCount === 0 ? (
                     <div className="space-y-3">
                       <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 inline-block">
                         {course.material_count === 0
                           ? 'Upload at least one material before analyzing'
-                          : processingMaterialCount > 0
-                            ? 'Wait for at least one material to finish processing'
-                            : failedMaterialCount > 0
+                          : failedMaterialCount > 0
                               ? 'Retry a failed material or upload another file before analyzing'
                               : 'Upload a completed material before analyzing'}
                       </p>

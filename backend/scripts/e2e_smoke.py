@@ -144,6 +144,13 @@ async def main() -> None:
             headers=headers,
         )
         retry.raise_for_status()
+        retried_material = await _wait_for_material(
+            client,
+            course_id,
+            token,
+            "bad.png",
+            {"completed", "failed"},
+        )
 
         analysis = await client.post(f"/courses/{course_id}/analysis", headers=headers)
         analysis.raise_for_status()
@@ -186,7 +193,7 @@ async def main() -> None:
             "exam_id": exam_id,
             "score": result.json()["score"],
             "questions": len(result.json()["results"]),
-            "material_retry_status": retry.json()["processing_status"],
+            "material_retry_status": retried_material["processing_status"],
         }
 
         # Smoke data should never accumulate in a developer's local database.

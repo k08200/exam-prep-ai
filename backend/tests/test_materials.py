@@ -617,6 +617,51 @@ async def test_parse_empty_text_marks_material_failed(
 
 
 @pytest.mark.asyncio
+async def test_successful_parse_invalidates_existing_analysis(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Finishing an upload invalidates analysis that could not include its text yet."""
+    from app.routers.materials import _parse_and_update
+
+    course_id = uuid.UUID(test_course["id"])
+    with patch("app.routers.materials._parse_and_update", new=AsyncMock()):
+        upload_response = await client.post(
+            f"/courses/{course_id}/materials",
+            files={"files": ("late.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+            headers=auth_headers,
+        )
+    material_id = uuid.UUID(upload_response.json()["materials"][0]["id"])
+    await _create_analysis(db_session, course_id)
+    await db_session.commit()
+
+    class TestSessionContext:
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    with patch(
+        "app.routers.materials.file_parser.parse_file",
+        new=AsyncMock(
+            return_value={
+                "text": "A complete lecture has enough extracted text for analysis.",
+                "page_count": 3,
+            }
+        ),
+    ), patch(
+        "app.core.database.AsyncSessionLocal",
+        return_value=TestSessionContext(),
+    ):
+        await _parse_and_update(material_id, "/tmp/late.pdf", "pdf")
+
+    assert not await _analysis_exists(db_session, course_id)
+
+
+@pytest.mark.asyncio
 async def test_retry_failed_material_resets_status(
     client: AsyncClient,
     auth_headers: dict,

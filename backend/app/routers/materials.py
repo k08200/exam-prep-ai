@@ -129,6 +129,8 @@ async def _parse_and_update(material_id: uuid.UUID, file_path: str, file_type: s
             material.page_count = parsed.get("page_count")
             material.processing_status = PROCESSING_STATUS_COMPLETED
             material.processing_error = None
+            # The newly extracted text can change the professor-style evidence.
+            await _invalidate_course_analysis(material.course_id, session)
 
             await session.commit()
         except Exception as exc:
