@@ -13,6 +13,7 @@ import json
 import os
 
 from app.core.config import settings
+from app.schemas.exam import GradeResponse
 from app.services import get_claude_service
 
 
@@ -36,8 +37,7 @@ async def main() -> None:
         professor_context="energy conversion, chloroplasts",
     )
 
-    if not isinstance(grade.get("score"), float):
-        raise RuntimeError("Claude grading smoke test did not return a numeric score.")
+    validated_grade = GradeResponse.model_validate(grade)
 
     stream_checked = False
     if os.getenv("CLAUDE_SMOKE_STREAM", "").lower() in {"1", "true", "yes"}:
@@ -45,6 +45,7 @@ async def main() -> None:
             os.getenv("CLAUDE_SMOKE_THINKING_BUDGET", "1024")
         )
         completed = False
+        validated_analysis = None
         async for event in service.analyze_professor_style(
             course_name="Smoke Test Biology",
             professor_name="Dr. Smoke",
@@ -55,9 +56,14 @@ async def main() -> None:
         ):
             if event.get("type") == "complete":
                 completed = True
+                from app.routers.analysis import _validate_analysis_payload
+
+                validated_analysis = _validate_analysis_payload(event.get("analysis"))
                 break
         if not completed:
             raise RuntimeError("Claude streaming smoke test did not complete.")
+        if validated_analysis is None:
+            raise RuntimeError("Claude streaming smoke test returned no analysis payload.")
         stream_checked = True
 
     print(
@@ -65,8 +71,8 @@ async def main() -> None:
             {
                 "status": "ok",
                 "model": settings.CLAUDE_MODEL,
-                "grade_score": grade["score"],
-                "grade_tokens_used": grade["tokens_used"],
+                "grade_score": validated_grade.score,
+                "grade_tokens_used": validated_grade.tokens_used,
                 "stream_checked": stream_checked,
             },
             indent=2,
