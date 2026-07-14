@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     }
     UPLOAD_DIR: str = "./uploads"
     MATERIAL_PROCESSING_STALE_MINUTES: int = 30
+    EXAM_GENERATION_STALE_MINUTES: int = 30
     REQUEST_TIMEOUT_SECONDS: float = 60.0
     AUTH_RATE_LIMIT_MAX_FAILURES: int = 5
     AUTH_RATE_LIMIT_WINDOW_SECONDS: int = 300
@@ -100,6 +101,8 @@ class Settings(BaseSettings):
             raise RuntimeError("Production AI_STREAM_EVENT_TIMEOUT_SECONDS must be positive.")
         if self.MAX_ANALYSIS_INPUT_CHARS <= 0:
             raise RuntimeError("Production MAX_ANALYSIS_INPUT_CHARS must be positive.")
+        if self.EXAM_GENERATION_STALE_MINUTES <= 0:
+            raise RuntimeError("Production EXAM_GENERATION_STALE_MINUTES must be positive.")
 
 
 settings = Settings()

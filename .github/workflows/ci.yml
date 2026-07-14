@@ -183,3 +183,43 @@ jobs:
       - uses: actions/checkout@v6
       - name: Validate docker-compose
         run: docker compose config --quiet
+
+  docker-migration-smoke:
+    name: Fresh Docker Migration Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Start fresh database and backend
+        env:
+          POSTGRES_PORT: "18543"
+          BACKEND_PORT: "18001"
+          FRONTEND_PORT: "18003"
+        run: docker compose -p exam-prep-ai-ci up -d --build db backend
+
+      - name: Wait for readiness and verify migration head
+        env:
+          POSTGRES_PORT: "18543"
+          BACKEND_PORT: "18001"
+          FRONTEND_PORT: "18003"
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:18001/ready; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18001/ready | grep '"status":"ready"'
+          docker compose -p exam-prep-ai-ci exec -T backend alembic current | grep '0002_exam_generation_guard'
+          docker compose -p exam-prep-ai-ci exec -T db \
+            psql -U examprep -d examprep_db -tAc \
+            "SELECT indexname FROM pg_indexes WHERE tablename='exams' AND indexname='uq_exams_one_draft_per_course';" \
+            | grep 'uq_exams_one_draft_per_course'
+
+      - name: Tear down fresh stack
+        if: always()
+        env:
+          POSTGRES_PORT: "18543"
+          BACKEND_PORT: "18001"
+          FRONTEND_PORT: "18003"
+        run: docker compose -p exam-prep-ai-ci down -v

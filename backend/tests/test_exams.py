@@ -5,7 +5,7 @@ The ClaudeService is fully mocked — no real API calls.
 import json
 import uuid
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -204,6 +204,70 @@ async def test_create_exam_conflict_when_generation_already_running(
 
     assert resp.status_code == 409
     assert "already running" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_exam_conflict_when_draft_exists_in_database(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    db_session: AsyncSession,
+) -> None:
+    """A fresh draft from another worker blocks a second generation request."""
+    from app.models.exam import EXAM_STATUS_DRAFT
+
+    course_id = uuid.UUID(test_course["id"])
+    await _create_analysis(db_session, course_id)
+    db_session.add(
+        Exam(
+            course_id=course_id,
+            user_id=uuid.UUID(test_course["user_id"]),
+            title="In-flight generation",
+            question_count=2,
+            status=EXAM_STATUS_DRAFT,
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/courses/{course_id}/exams",
+        json={"title": "Duplicate draft", "question_count": 2, "mode": "standard"},
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 409
+    assert "already running" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_stale_draft_exam_is_removed_before_new_generation(
+    test_course: dict,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    """A draft older than the recovery window is eligible for cleanup."""
+    from app.core.config import settings
+    from app.models.exam import EXAM_STATUS_DRAFT
+    from app.routers.exams import mark_stale_draft_exams
+
+    monkeypatch.setattr(settings, "EXAM_GENERATION_STALE_MINUTES", 30)
+    course_id = uuid.UUID(test_course["id"])
+    stale = Exam(
+        course_id=course_id,
+        user_id=uuid.UUID(test_course["user_id"]),
+        title="Abandoned generation",
+        question_count=2,
+        status=EXAM_STATUS_DRAFT,
+        created_at=datetime.now(timezone.utc) - timedelta(minutes=31),
+    )
+    db_session.add(stale)
+    await db_session.flush()
+
+    assert await mark_stale_draft_exams(db_session, course_id) == 1
+    await db_session.commit()
+    result = await db_session.execute(select(Exam).where(Exam.id == stale.id))
+    assert result.scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio

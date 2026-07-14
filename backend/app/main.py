@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
         await init_db()
 
     await materials.recover_stale_processing_materials()
+    await exams.recover_stale_exam_generations()
 
     yield
 

@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -18,6 +19,7 @@ try:
     from sqlalchemy import JSON
 except ImportError:
     from sqlalchemy.types import JSON  # type: ignore
+from sqlalchemy import text
 
 from app.core.database import Base
 
@@ -40,6 +42,15 @@ DIFFICULTY_HARD = "hard"
 
 class Exam(Base):
     __tablename__ = "exams"
+    __table_args__ = (
+        Index(
+            "uq_exams_one_draft_per_course",
+            "course_id",
+            unique=True,
+            postgresql_where=text("status = 'draft'"),
+            sqlite_where=text("status = 'draft'"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

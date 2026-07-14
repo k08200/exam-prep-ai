@@ -2,16 +2,18 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.security import get_current_user
 from app.core.sse import iter_with_heartbeat
@@ -48,6 +50,39 @@ claude_service = get_claude_service()
 analytics_service = AnalyticsService()
 _exam_generation_course_locks: set[uuid.UUID] = set()
 logger = logging.getLogger(__name__)
+
+
+async def mark_stale_draft_exams(
+    db: AsyncSession,
+    course_id: uuid.UUID | None = None,
+) -> int:
+    """Remove draft exams left behind by a crashed generation stream."""
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        minutes=settings.EXAM_GENERATION_STALE_MINUTES
+    )
+    query = select(Exam).where(
+        Exam.status == EXAM_STATUS_DRAFT,
+        Exam.created_at < cutoff,
+    )
+    if course_id is not None:
+        query = query.where(Exam.course_id == course_id)
+
+    result = await db.execute(query)
+    stale_exams = result.scalars().all()
+    for exam in stale_exams:
+        await db.delete(exam)
+    if stale_exams:
+        await db.flush()
+    return len(stale_exams)
+
+
+async def recover_stale_exam_generations() -> int:
+    """Startup recovery hook for drafts orphaned by a process restart."""
+    async with AsyncSessionLocal() as db:
+        count = await mark_stale_draft_exams(db)
+        if count:
+            await db.commit()
+        return count
 
 
 async def _assert_course_ownership(
@@ -317,11 +352,26 @@ async def create_exam(
             detail="Professor analysis not found. Run POST /courses/{course_id}/analysis first.",
         )
 
+    await mark_stale_draft_exams(db, course_id=course_id)
+
     if course_id in _exam_generation_course_locks:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Exam generation is already running for this course.",
         )
+
+    existing_draft_result = await db.execute(
+        select(Exam.id).where(
+            Exam.course_id == course_id,
+            Exam.status == EXAM_STATUS_DRAFT,
+        )
+    )
+    if existing_draft_result.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Exam generation is already running for this course.",
+        )
+
     _exam_generation_course_locks.add(course_id)
     course_name = course.name
     user_id = current_user.id
@@ -346,6 +396,13 @@ async def create_exam(
         await db.flush()
         await db.refresh(exam)
         await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        _exam_generation_course_locks.discard(course_id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Exam generation is already running for this course.",
+        ) from exc
     except Exception:
         _exam_generation_course_locks.discard(course_id)
         raise
@@ -493,7 +550,10 @@ async def submit_exam(
     db: AsyncSession = Depends(get_db),
 ) -> ExamResult:
     """Grade all student answers and return detailed results."""
-    result = await db.execute(select(Exam).where(Exam.id == exam_id))
+    # Serialize submissions for one exam so a retry cannot grade it twice.
+    result = await db.execute(
+        select(Exam).where(Exam.id == exam_id).with_for_update()
+    )
     exam = result.scalar_one_or_none()
     if exam is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exam not found")

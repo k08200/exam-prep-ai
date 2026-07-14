@@ -8,6 +8,7 @@
 - Set a production `SECRET_KEY` with at least 32 random characters.
 - Set `RUN_MIGRATIONS=true` unless the platform has a separate migration release step.
 - Set `AUTO_CREATE_TABLES=false` in production.
+- Keep `EXAM_GENERATION_STALE_MINUTES` long enough for the slowest expected Claude generation so an active stream is not reclaimed.
 - Mount persistent storage for `UPLOAD_DIR`.
 - Tune `REQUEST_TIMEOUT_SECONDS`, `AI_STREAM_HEARTBEAT_SECONDS`, and `AI_STREAM_EVENT_TIMEOUT_SECONDS` for your platform timeout limits.
 
@@ -94,6 +95,7 @@ Before routing traffic:
 - `/health` returns `status: ok`.
 - `/ready` returns `status: ready`, `database: ok`, and `upload_dir: ok`.
 - `alembic upgrade head` has completed.
+- The `0002_exam_generation_guard` migration is applied so concurrent draft generations are rejected safely.
 - Frontend build points to the production API URL.
 - `USE_MOCK_CLAUDE` is false only when `ANTHROPIC_API_KEY` is configured.
 - Upload storage is persistent across restarts.

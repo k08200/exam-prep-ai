@@ -79,7 +79,7 @@ The dev override bind-mounts `backend/` and `frontend/` into the containers:
 
 ## Runtime Safety
 
-The backend adds a request ID to every response (`X-Request-ID`), logs request outcomes, caps request setup time with `REQUEST_TIMEOUT_SECONDS`, and rate-limits repeated failed logins with `AUTH_RATE_LIMIT_MAX_FAILURES` over `AUTH_RATE_LIMIT_WINDOW_SECONDS`. AI streams send heartbeat events and fail with a retryable timeout after `AI_STREAM_EVENT_TIMEOUT_SECONDS` without upstream progress. Uploads also validate obvious extension/content-type mismatches before saving files.
+The backend adds a request ID to every response (`X-Request-ID`), logs request outcomes, caps request setup time with `REQUEST_TIMEOUT_SECONDS`, and rate-limits repeated failed logins with `AUTH_RATE_LIMIT_MAX_FAILURES` over `AUTH_RATE_LIMIT_WINDOW_SECONDS`. AI streams send heartbeat events and fail with a retryable timeout after `AI_STREAM_EVENT_TIMEOUT_SECONDS` without upstream progress. Uploads also validate obvious extension/content-type mismatches before saving files. Interrupted material processing and exam generation drafts are recovered after their configured stale window.
 
 ## Architecture
 
@@ -241,6 +241,7 @@ npm run dev
 | AUTO_CREATE_TABLES | Fallback SQLAlchemy table creation | No (default in Docker: false) |
 | CORS_ORIGINS | Comma-separated frontend origins allowed by the API | No (local defaults) |
 | MATERIAL_PROCESSING_STALE_MINUTES | Mark abandoned material parsing jobs failed after this many minutes | No (default: 30) |
+| EXAM_GENERATION_STALE_MINUTES | Remove abandoned draft exam generations after this many minutes | No (default: 30) |
 | MAX_UPLOAD_FILES | Maximum number of files per upload request | No (default: 10) |
 | MAX_ANALYSIS_INPUT_CHARS | Maximum extracted material characters sent to Claude per analysis | No (default: 600000) |
 | CLAUDE_MODEL | Claude model ID | No (default: claude-opus-4-8) |
