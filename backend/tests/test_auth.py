@@ -202,6 +202,42 @@ async def test_get_me_invalid_token_returns_401(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_password_change_invalidates_existing_access_tokens(
+    client: AsyncClient,
+) -> None:
+    """Changing a password immediately revokes tokens issued before the change."""
+    email = "session-version@example.com"
+    await client.post(
+        "/auth/register",
+        json={"email": email, "password": "testpassword123"},
+    )
+    login = await client.post(
+        "/auth/login",
+        data={"username": email, "password": "testpassword123"},
+    )
+    auth_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    changed = await client.patch(
+        "/auth/me/password",
+        json={"current_password": "testpassword123", "new_password": "newtestpassword123"},
+        headers=auth_headers,
+    )
+    assert changed.status_code == 204
+
+    stale_session = await client.get("/auth/me", headers=auth_headers)
+    assert stale_session.status_code == 401
+
+    new_login = await client.post(
+        "/auth/login",
+        data={"username": email, "password": "newtestpassword123"},
+    )
+    assert new_login.status_code == 200
+    fresh_headers = {"Authorization": f"Bearer {new_login.json()['access_token']}"}
+    fresh_session = await client.get("/auth/me", headers=fresh_headers)
+    assert fresh_session.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_export_my_data_contains_only_the_current_users_study_data(
     client: AsyncClient,
     db_session,

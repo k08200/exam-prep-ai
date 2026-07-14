@@ -116,7 +116,7 @@ async def login(
         )
 
     _clear_failed_logins(email)
-    access_token = create_access_token(data={"sub": user.email})
+    access_token = create_access_token(data={"sub": user.email, "ver": user.token_version})
     return Token(access_token=access_token, token_type="bearer")
 
 
@@ -330,6 +330,7 @@ async def change_password(
             detail="Current password is incorrect",
         )
     current_user.hashed_password = get_password_hash(payload.new_password)
+    current_user.token_version += 1
     await db.commit()
 
 

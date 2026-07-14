@@ -35,14 +35,17 @@ def create_access_token(
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def verify_token(token: str) -> Optional[str]:
-    """Decode a JWT and return the email (sub) claim, or None on failure."""
+def verify_token(token: str) -> Optional[tuple[str, int]]:
+    """Decode a JWT and return its email and session version, or None on failure."""
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
         email: Optional[str] = payload.get("sub")
-        return email
+        token_version = payload.get("ver", 0)
+        if email is None or not isinstance(token_version, int):
+            return None
+        return email, token_version
     except JWTError:
         return None
 
@@ -61,13 +64,16 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    email = verify_token(token)
-    if email is None:
+    token_data = verify_token(token)
+    if token_data is None:
         raise credentials_exception
+    email, token_version = token_data
 
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     if user is None:
+        raise credentials_exception
+    if user.token_version != token_version:
         raise credentials_exception
     if not user.is_active:
         raise HTTPException(

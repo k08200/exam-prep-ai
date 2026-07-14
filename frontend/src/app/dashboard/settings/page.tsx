@@ -32,7 +32,6 @@ export default function SettingsPage() {
   const { user, logout, refreshUser } = useAuth();
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [passwordSuccess, setPasswordSuccess] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -80,8 +79,7 @@ export default function SettingsPage() {
       setPasswordError(null);
       await authApi.changePassword(data.current_password, data.new_password);
       resetPw();
-      setPasswordSuccess(true);
-      setTimeout(() => setPasswordSuccess(false), 3000);
+      logout();
     } catch (err: unknown) {
       setPasswordError(extractErrorMessage(err, 'Failed to change password.'));
     }
@@ -193,12 +191,6 @@ export default function SettingsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {passwordSuccess && (
-            <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg mb-4 text-sm text-green-700">
-              <CheckCircle className="h-4 w-4 flex-shrink-0" />
-              Password changed successfully!
-            </div>
-          )}
           {passwordError && (
             <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg mb-4 text-sm text-red-700">
               <AlertCircle className="h-4 w-4 flex-shrink-0" />

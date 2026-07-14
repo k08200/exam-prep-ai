@@ -112,7 +112,7 @@ Before routing traffic:
 - `/health` returns `status: ok`.
 - `/ready` returns `status: ready`, `database: ok`, and `upload_dir: ok`.
 - `alembic upgrade head` has completed.
-- The `0002_exam_generation_guard` migration is applied so concurrent draft generations are rejected safely.
+- The `0003_user_token_version` migration is applied so concurrent draft generations are rejected safely and password changes invalidate existing sessions.
 - Frontend build points to the production API URL.
 - `USE_MOCK_CLAUDE` is false only when `ANTHROPIC_API_KEY` is configured.
 - Upload storage is persistent across restarts.
