@@ -143,9 +143,13 @@ async def _assert_course_ownership(
     return course
 
 
-async def _acquire_analysis_run(course_id: uuid.UUID, db: AsyncSession) -> bool:
+async def _acquire_analysis_run(
+    course_id: uuid.UUID,
+    db: AsyncSession,
+) -> datetime | None:
     """Atomically reserve the course analysis slot across backend instances."""
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.ANALYSIS_RUN_STALE_MINUTES)
+    run_started_at = datetime.now(timezone.utc)
     try:
         async with db.begin_nested():
             await db.execute(
@@ -154,17 +158,22 @@ async def _acquire_analysis_run(course_id: uuid.UUID, db: AsyncSession) -> bool:
                     AnalysisRun.created_at < cutoff,
                 )
             )
-            db.add(AnalysisRun(course_id=course_id))
+            db.add(AnalysisRun(course_id=course_id, created_at=run_started_at))
             await db.flush()
     except IntegrityError:
-        return False
-    return True
+        return None
+    return run_started_at
 
 
-async def _release_analysis_run(course_id: uuid.UUID) -> None:
-    """Release the shared run slot after a stream finishes or is cancelled."""
+async def _release_analysis_run(course_id: uuid.UUID, run_started_at: datetime) -> None:
+    """Release only the shared run slot owned by this stream."""
     async with AsyncSessionLocal() as db:
-        await db.execute(delete(AnalysisRun).where(AnalysisRun.course_id == course_id))
+        await db.execute(
+            delete(AnalysisRun).where(
+                AnalysisRun.course_id == course_id,
+                AnalysisRun.created_at == run_started_at,
+            )
+        )
         await db.commit()
 
 
@@ -174,6 +183,7 @@ async def _stream_analysis(
     professor_name: str,
     materials_text: str,
     materials_snapshot: MaterialSnapshot,
+    run_started_at: datetime,
     input_was_truncated: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Internal generator: stream SSE events for professor analysis."""
@@ -317,7 +327,7 @@ async def _stream_analysis(
             }
         )
     finally:
-        await _release_analysis_run(course_id)
+        await _release_analysis_run(course_id, run_started_at)
 
 
 @router.post("/courses/{course_id}/analysis")
@@ -379,7 +389,8 @@ async def run_analysis(
             ),
         )
 
-    if not await _acquire_analysis_run(course_id, db):
+    run_started_at = await _acquire_analysis_run(course_id, db)
+    if run_started_at is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Analysis is already running for this course.",
@@ -390,7 +401,7 @@ async def run_analysis(
         await db.commit()
     except Exception:
         await db.rollback()
-        await _release_analysis_run(course_id)
+        await _release_analysis_run(course_id, run_started_at)
         raise
 
     materials_text, input_was_truncated = _build_materials_text(usable_materials)
@@ -405,6 +416,7 @@ async def run_analysis(
             professor_name,
             materials_text,
             materials_snapshot,
+            run_started_at,
             input_was_truncated=input_was_truncated,
         ),
         media_type="text/event-stream",

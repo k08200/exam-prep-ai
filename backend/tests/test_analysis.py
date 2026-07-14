@@ -5,6 +5,7 @@ The ClaudeService is fully mocked — no real API calls.
 import json
 import uuid
 import asyncio
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -336,6 +337,30 @@ async def test_analysis_lock_released_after_stream_error(
     assert "provider busy" in resp.text
     run = await db_session.get(AnalysisRun, course_id)
     assert run is None
+
+
+@pytest.mark.asyncio
+async def test_old_analysis_stream_cannot_release_newer_reclaimed_lock(
+    db_session: AsyncSession,
+    test_course: dict,
+) -> None:
+    """A stale stream must not delete the lock claimed by its replacement."""
+    from app.models.analysis_run import AnalysisRun
+    from app.routers.analysis import _release_analysis_run
+
+    course_id = uuid.UUID(test_course["id"])
+    old_run_started_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    new_run_started_at = datetime.now(timezone.utc)
+    db_session.add(
+        AnalysisRun(course_id=course_id, created_at=new_run_started_at)
+    )
+    await db_session.commit()
+
+    await _release_analysis_run(course_id, old_run_started_at)
+
+    run = await db_session.get(AnalysisRun, course_id)
+    assert run is not None
+    assert run.created_at.replace(tzinfo=timezone.utc) == new_run_started_at
 
 
 @pytest.mark.asyncio
