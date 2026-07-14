@@ -110,6 +110,11 @@ test.describe('core browser flow', () => {
 
     await expect(page.getByText(/current password is incorrect/i)).toBeVisible();
     await expect(page).toHaveURL(/\/dashboard\/settings/);
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: /export data/i }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^exam-prep-ai-export-.*\.json$/);
   });
 
   test('runs the full study flow from upload through graded results', async ({ page }) => {

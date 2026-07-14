@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AlertCircle, CheckCircle, User, Lock } from 'lucide-react';
+import { AlertCircle, CheckCircle, Download, Lock, User } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
@@ -37,6 +37,8 @@ export default function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const {
     register,
@@ -94,6 +96,26 @@ export default function SettingsPage() {
     } catch (err: unknown) {
       setDeleteError(extractErrorMessage(err, 'Failed to delete account. Please try again.'));
       setIsDeleting(false);
+    }
+  };
+
+  const handleExportData = async () => {
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      const response = await authApi.exportData();
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `exam-prep-ai-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      setExportError(extractErrorMessage(err, 'Failed to export your data. Please try again.'));
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -229,6 +251,35 @@ export default function SettingsPage() {
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Download className="h-4 w-4 text-gray-500" />
+            <h2 className="text-sm font-semibold text-gray-900">Your Data</h2>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Download your study archive</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Includes courses, extracted material text, analyses, exams, answers, and progress.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" loading={isExporting} onClick={handleExportData}>
+              <Download className="h-4 w-4" />
+              Export Data
+            </Button>
+          </div>
+          {exportError && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg mt-4 text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              {exportError}
+            </div>
+          )}
         </CardContent>
       </Card>
 

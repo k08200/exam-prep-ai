@@ -10,6 +10,7 @@
 - Set `AUTO_CREATE_TABLES=false` in production.
 - Keep `EXAM_GENERATION_STALE_MINUTES` long enough for the slowest expected Claude generation so an active stream is not reclaimed.
 - Mount persistent storage for `UPLOAD_DIR`.
+- Set `MAX_USER_STORAGE_BYTES` to a per-user limit appropriate for the disk available to your users.
 - Tune `REQUEST_TIMEOUT_SECONDS`, `AI_STREAM_HEARTBEAT_SECONDS`, and `AI_STREAM_EVENT_TIMEOUT_SECONDS` for your platform timeout limits.
 
 ## AI Mode
@@ -87,6 +88,22 @@ For browser-level validation, run the frontend against the deployed API and exec
 cd frontend
 E2E_BASE_URL=https://your-frontend.example.com npm run e2e
 ```
+
+## Backups and User Data
+
+For a local Docker installation, create a complete database-and-upload archive with:
+
+```bash
+./scripts/backup_local.sh
+```
+
+Store the resulting `backups/*.tar.gz` archive somewhere separate from the machine. To replace a local installation with that backup, use the explicit destructive restore command:
+
+```bash
+./scripts/restore_local.sh backups/exam-prep-ai-YYYYMMDDTHHMMSSZ.tar.gz --force
+```
+
+Individual users can export their own study data from Settings. The export deliberately excludes password hashes, active sessions, and server secrets.
 
 ## Health Gates
 

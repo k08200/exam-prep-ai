@@ -66,6 +66,21 @@ cd ..
 RUN_BROWSER_E2E=true ./scripts/local_verify.sh
 ```
 
+### Local Backups
+The app keeps PostgreSQL data and uploaded files in Docker volumes. Create a portable local backup before an upgrade or before sharing the machine with another person:
+
+```bash
+./scripts/backup_local.sh
+```
+
+This writes a timestamped archive under `backups/` containing a PostgreSQL dump and all uploaded files. Restore it only when you intentionally want to replace the current local data:
+
+```bash
+./scripts/restore_local.sh backups/exam-prep-ai-YYYYMMDDTHHMMSSZ.tar.gz --force
+```
+
+Each user can also download their own courses, extracted material text, analyses, exams, answers, and progress from **Settings → Your Data → Export Data**. Password hashes, sessions, and API keys are never included.
+
 ### Development With Hot Reload
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
@@ -137,6 +152,7 @@ Legacy Claude model snapshots use explicit `budget_tokens`; current model famili
 - `PATCH /auth/me` - Update profile
 - `PATCH /auth/me/password` - Change password
 - `DELETE /auth/me` - Delete account
+- `GET /auth/me/export` - Download the current user's portable study-data archive
 
 ### Courses
 - `GET /courses` - List your courses
@@ -243,6 +259,7 @@ npm run dev
 | MATERIAL_PROCESSING_STALE_MINUTES | Mark abandoned material parsing jobs failed after this many minutes | No (default: 30) |
 | EXAM_GENERATION_STALE_MINUTES | Remove abandoned draft exam generations after this many minutes | No (default: 30) |
 | MAX_UPLOAD_FILES | Maximum number of files per upload request | No (default: 10) |
+| MAX_USER_STORAGE_BYTES | Maximum cumulative uploaded-file storage per account | No (default: 2147483648 / 2 GB) |
 | MAX_ANALYSIS_INPUT_CHARS | Maximum extracted material characters sent to Claude per analysis | No (default: 600000) |
 | CLAUDE_MODEL | Claude model ID | No (default: claude-opus-4-8) |
 | THINKING_BUDGET_ANALYSIS | Thinking tokens for analysis | No (default: 30000) |

@@ -13,7 +13,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -177,19 +177,31 @@ async def recover_stale_processing_materials() -> int:
         return await mark_stale_processing_materials(session)
 
 
-async def _save_upload_file(upload_file: UploadFile, file_path: Path) -> int:
-    """Stream an uploaded file to disk and return the number of bytes written."""
+async def _save_upload_file(
+    upload_file: UploadFile,
+    file_path: Path,
+    max_size: int | None = None,
+) -> int:
+    """Stream an uploaded file to disk without exceeding its effective size limit."""
+    effective_max_size = min(
+        settings.MAX_FILE_SIZE if max_size is None else max_size,
+        settings.MAX_FILE_SIZE,
+    )
     file_size = 0
     try:
         async with aiofiles.open(file_path, "wb") as f:
             while chunk := await upload_file.read(UPLOAD_CHUNK_SIZE):
                 file_size += len(chunk)
-                if file_size > settings.MAX_FILE_SIZE:
+                if file_size > effective_max_size:
+                    limit_label = (
+                        f"the {settings.MAX_FILE_SIZE // (1024 * 1024)} MB file limit"
+                        if effective_max_size == settings.MAX_FILE_SIZE
+                        else "the remaining storage quota"
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                         detail=(
-                            f"File '{upload_file.filename or 'unknown'}' exceeds "
-                            f"the {settings.MAX_FILE_SIZE // (1024 * 1024)} MB limit."
+                            f"File '{upload_file.filename or 'unknown'}' exceeds {limit_label}."
                         ),
                     )
                 await f.write(chunk)
@@ -214,10 +226,25 @@ async def upload_materials(
     """Upload one or more files to a course. Parsing happens in the background."""
     await _assert_course_ownership(course_id, current_user.id, db)
 
+    # Keep simultaneous uploads for one account from racing past its storage quota.
+    await db.execute(select(User.id).where(User.id == current_user.id).with_for_update())
+
     if len(files) > settings.MAX_UPLOAD_FILES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Upload at most {settings.MAX_UPLOAD_FILES} files at a time.",
+        )
+
+    storage_result = await db.execute(
+        select(func.coalesce(func.sum(Material.file_size), 0))
+        .join(Course, Material.course_id == Course.id)
+        .where(Course.user_id == current_user.id)
+    )
+    current_storage = int(storage_result.scalar_one())
+    if current_storage >= settings.MAX_USER_STORAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Your account has reached its storage quota. Delete unused materials before uploading more.",
         )
 
     upload_dir = Path(settings.UPLOAD_DIR) / str(course_id)
@@ -251,7 +278,17 @@ async def upload_materials(
             safe_filename = f"{uuid.uuid4()}{ext}"
             file_path = upload_dir / safe_filename
 
-            file_size = await _save_upload_file(upload_file, file_path)
+            remaining_storage = settings.MAX_USER_STORAGE_BYTES - current_storage - total_size
+            if remaining_storage <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Your account has reached its storage quota. Delete unused materials before uploading more.",
+                )
+            file_size = await _save_upload_file(
+                upload_file,
+                file_path,
+                max_size=remaining_storage,
+            )
             saved_paths.append(file_path)
 
             file_type = EXTENSION_TO_TYPE.get(ext, "unknown")

@@ -75,6 +75,7 @@ export const authApi = {
   updateMe: (data: { full_name?: string }) => api.patch('/auth/me', data),
   changePassword: (current_password: string, new_password: string) =>
     api.patch('/auth/me/password', { current_password, new_password }),
+  exportData: () => api.get('/auth/me/export', { responseType: 'blob' }),
   deleteMe: () => api.delete('/auth/me'),
 };
 

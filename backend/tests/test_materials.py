@@ -265,6 +265,27 @@ async def test_upload_too_large_fails(
 
 
 @pytest.mark.asyncio
+async def test_upload_respects_total_account_storage_quota(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_course: dict,
+    monkeypatch,
+) -> None:
+    """The per-account storage quota is enforced before a file is persisted."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "MAX_USER_STORAGE_BYTES", 32)
+    response = await client.post(
+        f"/courses/{test_course['id']}/materials",
+        files={"files": ("over-quota.pdf", _make_tiny_pdf_bytes(), "application/pdf")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 413
+    assert "storage quota" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_upload_too_many_files_fails(
     client: AsyncClient, auth_headers: dict, test_course: dict, monkeypatch
 ) -> None:

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # File uploads
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
     MAX_UPLOAD_FILES: int = 10
+    MAX_USER_STORAGE_BYTES: int = 2 * 1024 * 1024 * 1024  # 2GB per account
     MAX_ANALYSIS_INPUT_CHARS: int = 600_000
     ALLOWED_EXTENSIONS: Set[str] = {
         ".pdf",
@@ -101,6 +102,8 @@ class Settings(BaseSettings):
             raise RuntimeError("Production AI_STREAM_EVENT_TIMEOUT_SECONDS must be positive.")
         if self.MAX_ANALYSIS_INPUT_CHARS <= 0:
             raise RuntimeError("Production MAX_ANALYSIS_INPUT_CHARS must be positive.")
+        if self.MAX_USER_STORAGE_BYTES <= 0:
+            raise RuntimeError("Production MAX_USER_STORAGE_BYTES must be positive.")
         if self.EXAM_GENERATION_STALE_MINUTES <= 0:
             raise RuntimeError("Production EXAM_GENERATION_STALE_MINUTES must be positive.")
 
