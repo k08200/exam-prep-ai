@@ -9,6 +9,7 @@ export interface User {
 export interface RuntimeHealth {
   status: string;
   version: string;
+  ai: 'ok' | 'not_configured' | string;
   ai_mode: 'mock' | 'claude' | string;
   claude_configured: boolean;
 }

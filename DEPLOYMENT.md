@@ -26,6 +26,7 @@ Production Claude mode must be explicit:
 USE_MOCK_CLAUDE=false
 ANTHROPIC_API_KEY=your_anthropic_key
 CLAUDE_MODEL=claude-opus-4-8
+CLAUDE_THINKING_EFFORT=high
 ```
 
 The backend now fails fast if `USE_MOCK_CLAUDE=false` and `ANTHROPIC_API_KEY` is empty. Confirm the active mode with:
@@ -39,6 +40,7 @@ Expected production fields:
 ```json
 {
   "status": "ok",
+  "ai": "ok",
   "ai_mode": "claude",
   "claude_configured": true
 }

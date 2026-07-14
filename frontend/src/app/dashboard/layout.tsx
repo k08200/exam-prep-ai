@@ -246,6 +246,19 @@ export default function DashboardLayout({
               </p>
             </div>
           )}
+          {runtimeHealth?.ai_mode === 'claude' && !runtimeHealth.claude_configured && (
+            <div
+              role="status"
+              className="flex items-start gap-2 border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 sm:px-6"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
+              <p>
+                <span className="font-semibold">Claude AI is not configured.</span>{' '}
+                Set <code className="rounded bg-red-100 px-1 py-0.5 text-xs">ANTHROPIC_API_KEY</code>{' '}
+                or switch back to mock mode before starting AI tasks.
+              </p>
+            </div>
+          )}
           {children}
         </main>
       </div>

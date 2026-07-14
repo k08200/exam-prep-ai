@@ -4,7 +4,7 @@ Hyper-personalized AI exam prep. Upload your lecture materials → AI learns you
 
 ## Features
 - Upload syllabus, lecture slides, past exams (PDF, PPTX, DOCX, images)
-- AI analyzes professor's style using Claude Opus 4.1 with extended thinking
+- AI analyzes professor's style using Claude Opus 4.8 with adaptive thinking
 - Generates unlimited mock exams matching your professor's exact style
 - Real-time scoring + professor-perspective explanations
 - Weakness heatmap tracking your weakest concepts
@@ -116,13 +116,13 @@ exam-prep-ai/
 
 ## Claude API Integration
 
-Uses Claude Opus 4.1 with extended thinking:
+Uses Claude Opus 4.8 with adaptive thinking by default:
 - **Pattern Analysis**: 30,000 token thinking budget for deep professor style extraction
 - **Exam Generation**: 10,000 token thinking budget per question for style verification
 - **Grading**: Instant grading with professor-perspective explanations
-- All responses stream in real-time via SSE
+- Grading uses standard Messages API responses; analysis and exam generation stream in real-time via SSE
 
-Note: The `thinking: {type: "adaptive"}` specification uses Claude's extended thinking feature implemented as `{"type": "enabled", "budget_tokens": N}` per the current Anthropic API.
+Legacy Claude model snapshots use explicit `budget_tokens`; current model families use `thinking: {type: "adaptive"}` with `output_config: {"effort": "high"}`. Set `CLAUDE_THINKING_EFFORT` to tune the current-model depth.
 
 ## API Endpoints
 

@@ -180,19 +180,21 @@ async def main() -> None:
         result = await client.get(f"/exams/{exam_id}/result", headers=headers)
         result.raise_for_status()
 
-        print(
-            json.dumps(
-                {
-                    "email": email,
-                    "course_id": course_id,
-                    "exam_id": exam_id,
-                    "score": result.json()["score"],
-                    "questions": len(result.json()["results"]),
-                    "material_retry_status": retry.json()["processing_status"],
-                },
-                indent=2,
-            )
-        )
+        summary = {
+            "email": email,
+            "course_id": course_id,
+            "exam_id": exam_id,
+            "score": result.json()["score"],
+            "questions": len(result.json()["results"]),
+            "material_retry_status": retry.json()["processing_status"],
+        }
+
+        # Smoke data should never accumulate in a developer's local database.
+        cleanup = await client.delete("/auth/me", headers=headers)
+        cleanup.raise_for_status()
+        summary["cleanup"] = "account_deleted"
+
+        print(json.dumps(summary, indent=2))
 
 
 if __name__ == "__main__":

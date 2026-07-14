@@ -24,11 +24,16 @@ async def main() -> None:
     service = get_claude_service()
 
     grade = await service.grade_response(
-        question_text="What is photosynthesis?",
-        correct_answer="Plants convert light energy into chemical energy.",
+        question={
+            "question_text": "What is photosynthesis?",
+            "question_type": "essay",
+            "correct_answer": "Plants convert light energy into chemical energy.",
+            "explanation": "Photosynthesis stores light energy as chemical energy.",
+            "concepts": ["Photosynthesis"],
+            "difficulty": "easy",
+        },
         student_answer="Plants use light to make stored chemical energy.",
-        question_type="essay",
-        concepts=["Photosynthesis"],
+        professor_context="energy conversion, chloroplasts",
     )
 
     if not isinstance(grade.get("score"), float):

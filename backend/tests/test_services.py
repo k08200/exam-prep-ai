@@ -540,6 +540,7 @@ async def test_health_endpoint(client) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
+    assert data["ai"] == "ok"
     assert data["ai_mode"] == "mock"
     assert data["claude_configured"] is False
 
@@ -558,6 +559,7 @@ async def test_ready_endpoint_checks_dependencies(client, monkeypatch, tmp_path)
     assert data["status"] == "ready"
     assert data["database"] == "ok"
     assert data["upload_dir"] == "ok"
+    assert data["ai"] == "ok"
 
 
 @pytest.mark.asyncio
@@ -587,6 +589,7 @@ async def test_health_endpoint_reports_real_claude_mode(monkeypatch) -> None:
 
     assert data["ai_mode"] == "claude"
     assert data["claude_configured"] is True
+    assert data["ai"] == "ok"
 
 
 @pytest.mark.asyncio
@@ -606,6 +609,27 @@ async def test_readiness_check_reports_unwritable_upload_dir(monkeypatch, tmp_pa
     assert data["status"] == "not_ready"
     assert data["database"] == "ok"
     assert data["upload_dir"] == "not_writable"
+
+
+@pytest.mark.asyncio
+async def test_readiness_check_reports_unconfigured_claude(monkeypatch, tmp_path) -> None:
+    """Real Claude mode without a key must not pass the readiness gate."""
+    from app.core.config import settings
+    from app.main import readiness_check
+
+    class FakeDB:
+        async def execute(self, query):
+            return None
+
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "USE_MOCK_CLAUDE", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "")
+
+    data = await readiness_check(db=FakeDB())
+
+    assert data["status"] == "not_ready"
+    assert data["upload_dir"] == "ok"
+    assert data["ai"] == "not_configured"
 
 
 @pytest.mark.asyncio
