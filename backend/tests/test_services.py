@@ -634,7 +634,7 @@ async def test_readiness_check_reports_unconfigured_claude(monkeypatch, tmp_path
 
 @pytest.mark.asyncio
 async def test_lifespan_creates_upload_dir_runs_init_and_recovers(monkeypatch, tmp_path) -> None:
-    """Application lifespan prepares local storage, migrations, and stale material recovery."""
+    """Application lifespan prepares storage and runs stale-data recovery hooks."""
     from unittest.mock import AsyncMock
 
     from fastapi import FastAPI
@@ -644,16 +644,19 @@ async def test_lifespan_creates_upload_dir_runs_init_and_recovers(monkeypatch, t
 
     init_mock = AsyncMock()
     recover_mock = AsyncMock(return_value=0)
+    exam_recover_mock = AsyncMock(return_value=0)
     monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setattr(settings, "AUTO_CREATE_TABLES", True)
     monkeypatch.setattr("app.main.init_db", init_mock)
     monkeypatch.setattr("app.main.materials.recover_stale_processing_materials", recover_mock)
+    monkeypatch.setattr("app.main.exams.recover_stale_exam_generations", exam_recover_mock)
 
     async with lifespan(FastAPI()):
         assert (tmp_path / "uploads").is_dir()
 
     init_mock.assert_awaited_once()
     recover_mock.assert_awaited_once()
+    exam_recover_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio

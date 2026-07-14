@@ -37,22 +37,23 @@ async function registerAndCreateCourse(page: Page, courseName: string) {
 }
 
 async function answerEveryQuestion(page: Page) {
-  const radioNames = await page.locator('input[type="radio"]').evaluateAll((inputs) =>
-    Array.from(new Set(inputs.map((input) => (input as HTMLInputElement).name)))
+  const radioGroups = await page.locator('input[type="radio"]').evaluateAll((inputs) =>
+    Array.from(
+      new Map(
+        inputs.map((input) => {
+          const radio = input as HTMLInputElement;
+          return [radio.name, radio.value];
+        })
+      ),
+      ([name, value]) => ({ name, value })
+    )
   );
-  for (const name of radioNames) {
-    const input = page.locator(`input[type="radio"][name="${name}"]`).first();
-    await expect
-      .poll(
-        async () => {
-          if (!(await input.isChecked())) {
-            await input.click({ force: true });
-          }
-          return input.isChecked();
-        },
-        { timeout: 5_000 }
-      )
-      .toBe(true);
+  for (const { name, value } of radioGroups) {
+    const input = page.locator(
+      `input[type="radio"][name="${name}"][value="${value}"]`
+    );
+    await input.check({ force: true });
+    await expect(input).toBeChecked({ timeout: 10_000 });
   }
 
   const textInputs = page.locator('input[type="text"]');
