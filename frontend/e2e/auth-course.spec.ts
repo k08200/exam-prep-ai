@@ -52,7 +52,9 @@ async function answerEveryQuestion(page: Page) {
     const input = page.locator(
       `input[type="radio"][name="${name}"][value="${value}"]`
     );
-    await input.check();
+    const option = input.locator('xpath=ancestor::label');
+    await option.scrollIntoViewIfNeeded();
+    await option.click();
     await expect(input).toBeChecked({ timeout: 10_000 });
   }
 
