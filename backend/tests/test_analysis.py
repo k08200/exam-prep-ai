@@ -91,6 +91,62 @@ async def _mock_analyze_generator():
     }
 
 
+def test_build_materials_text_respects_configured_limit(monkeypatch) -> None:
+    """Large material collections are bounded before they reach the AI prompt."""
+    from app.core.config import settings
+    from app.routers.analysis import _build_materials_text
+
+    monkeypatch.setattr(settings, "MAX_ANALYSIS_INPUT_CHARS", 120)
+    materials = [
+        Material(
+            original_filename="lecture-one.pdf",
+            extracted_text="A" * 200,
+        ),
+        Material(
+            original_filename="lecture-two.pdf",
+            extracted_text="B" * 200,
+        ),
+    ]
+
+    text, truncated = _build_materials_text(materials)
+
+    assert len(text) <= 120
+    assert truncated is True
+    assert "lecture-one.pdf" in text
+    assert "omitted due to the analysis input limit" in text
+
+
+def test_validate_analysis_payload_rejects_incomplete_output() -> None:
+    """Incomplete Claude JSON must not be accepted as a saved analysis."""
+    from pydantic import ValidationError
+
+    from app.routers.analysis import _validate_analysis_payload
+
+    with pytest.raises(ValidationError):
+        _validate_analysis_payload({"top_concepts": []})
+
+
+def test_validate_analysis_payload_rejects_non_object_topic_distribution() -> None:
+    """Malformed topic distributions must not reach the JSON analysis column."""
+    from app.routers.analysis import _validate_analysis_payload
+
+    with pytest.raises(TypeError, match="topic_distribution must be an object"):
+        _validate_analysis_payload(
+            {
+                "question_types": {
+                    "multiple_choice": 25,
+                    "essay": 25,
+                    "calculation": 25,
+                    "true_false": 25,
+                },
+                "top_concepts": [],
+                "professor_terms": [],
+                "topic_distribution": [],
+                "exam_patterns": {},
+            }
+        )
+
+
 @pytest.fixture(autouse=True)
 def use_test_stream_session(db_engine, monkeypatch) -> None:
     """Make analysis streams persist through the same test database engine."""

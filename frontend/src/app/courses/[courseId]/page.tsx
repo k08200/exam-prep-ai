@@ -63,6 +63,7 @@ export default function CourseDetailPage() {
   const [analysisText, setAnalysisText] = useState('');
   const [analysisComplete, setAnalysisComplete] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisNotice, setAnalysisNotice] = useState<string | null>(null);
 
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
   const [generateOptions, setGenerateOptions] = useState<GenerateExamOptions>({
@@ -147,6 +148,7 @@ export default function CourseDetailPage() {
 
     setAnalysisText('');
     setAnalysisError(null);
+    setAnalysisNotice(null);
     setAnalysisComplete(false);
 
     await startStream(analysisApi.getStreamUrl(courseId), {
@@ -155,6 +157,9 @@ export default function CourseDetailPage() {
       onEvent: (event) => {
         if (event.type === 'thinking' || event.type === 'text' || event.type === 'content') {
           setAnalysisText((prev) => prev + (event.content || ''));
+        }
+        if (event.type === 'warning') {
+          setAnalysisNotice(event.content || 'Some material text was shortened for analysis.');
         }
         if (event.type === 'complete') {
           setAnalysisComplete(true);
@@ -511,6 +516,13 @@ export default function CourseDetailPage() {
                       </div>
                     </CardContent>
                   </Card>
+
+                  {analysisNotice && (
+                    <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                      <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                      <span>{analysisNotice}</span>
+                    </div>
+                  )}
 
                   {analysisError && (
                     <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">

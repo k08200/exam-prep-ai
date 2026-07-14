@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # File uploads
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
     MAX_UPLOAD_FILES: int = 10
+    MAX_ANALYSIS_INPUT_CHARS: int = 600_000
     ALLOWED_EXTENSIONS: Set[str] = {
         ".pdf",
         ".pptx",
@@ -97,6 +98,8 @@ class Settings(BaseSettings):
             raise RuntimeError("Production AI_STREAM_HEARTBEAT_SECONDS must be positive.")
         if self.AI_STREAM_EVENT_TIMEOUT_SECONDS <= 0:
             raise RuntimeError("Production AI_STREAM_EVENT_TIMEOUT_SECONDS must be positive.")
+        if self.MAX_ANALYSIS_INPUT_CHARS <= 0:
+            raise RuntimeError("Production MAX_ANALYSIS_INPUT_CHARS must be positive.")
 
 
 settings = Settings()

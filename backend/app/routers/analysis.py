@@ -1,11 +1,14 @@
+import logging
 import uuid
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.security import get_current_user
 from app.core.sse import iter_with_heartbeat, sse_event
@@ -20,6 +23,74 @@ from app.services.material_quality import is_usable_extracted_text
 router = APIRouter(tags=["analysis"])
 claude_service = get_claude_service()
 _analysis_course_locks: set[uuid.UUID] = set()
+logger = logging.getLogger(__name__)
+MATERIAL_SEPARATOR = "\n\n---\n\n"
+TRUNCATION_MARKER = "\n[Additional material text omitted due to the analysis input limit.]\n"
+
+
+def _build_materials_text(materials: list[Material]) -> tuple[str, bool]:
+    """Build a bounded, labelled prompt from completed material text."""
+    limit = max(settings.MAX_ANALYSIS_INPUT_CHARS, 1)
+    sections: list[str] = []
+    used_chars = 0
+    truncated = False
+
+    for material in materials:
+        separator = MATERIAL_SEPARATOR if sections else ""
+        header = f"[File: {material.original_filename}]\n"
+        text = material.extracted_text or ""
+        available = limit - used_chars - len(separator) - len(header)
+        if available <= 0:
+            truncated = True
+            break
+
+        if len(text) > available:
+            marker = TRUNCATION_MARKER[:available]
+            content_budget = max(available - len(marker), 0)
+            text = text[:content_budget] + marker
+            truncated = True
+
+        section = f"{header}{text}"
+        sections.append(section)
+        used_chars += len(separator) + len(section)
+
+        if truncated:
+            break
+
+    if len(sections) < len(materials):
+        truncated = True
+
+    return MATERIAL_SEPARATOR.join(sections), truncated
+
+
+def _validate_analysis_payload(payload: dict) -> dict:
+    """Validate and normalize Claude's structured analysis before persistence."""
+    if not isinstance(payload, dict):
+        raise TypeError("analysis payload must be an object")
+
+    question_types = QuestionTypeDistribution.model_validate(payload.get("question_types", {}))
+    top_concepts = [ConceptItem.model_validate(item) for item in payload.get("top_concepts", [])]
+    professor_terms = [ProfessorTerm.model_validate(item) for item in payload.get("professor_terms", [])]
+    raw_topic_distribution = payload.get("topic_distribution")
+    if raw_topic_distribution is None:
+        raw_topic_distribution = {}
+    if not isinstance(raw_topic_distribution, dict):
+        raise TypeError("topic_distribution must be an object")
+    topic_distribution = {
+        str(topic): float(weight)
+        for topic, weight in raw_topic_distribution.items()
+    }
+    exam_patterns = payload.get("exam_patterns") or {}
+    if not isinstance(exam_patterns, dict):
+        raise ValueError("exam_patterns must be an object")
+
+    return {
+        "top_concepts": [item.model_dump() for item in top_concepts],
+        "question_types": question_types.model_dump(),
+        "topic_distribution": topic_distribution,
+        "professor_terms": [item.model_dump() for item in professor_terms],
+        "exam_patterns": exam_patterns,
+    }
 
 
 async def _assert_course_ownership(
@@ -40,6 +111,7 @@ async def _stream_analysis(
     professor_name: str,
     materials_text: str,
     lock_course_id: uuid.UUID,
+    input_was_truncated: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Internal generator: stream SSE events for professor analysis."""
     raw_text_parts: list[str] = []
@@ -50,6 +122,16 @@ async def _stream_analysis(
     try:
         try:
             yield sse_event({"type": "heartbeat"})
+            if input_was_truncated:
+                yield sse_event(
+                    {
+                        "type": "warning",
+                        "content": (
+                            "Some material text was shortened to fit the analysis limit. "
+                            "Run separate analyses with fewer materials for full coverage."
+                        ),
+                    }
+                )
             async for event in iter_with_heartbeat(
                 claude_service.analyze_professor_style(
                     course_name=course_name,
@@ -88,6 +170,22 @@ async def _stream_analysis(
                 {
                     "type": "error",
                     "content": "Analysis did not produce structured output",
+                    "retryable": True,
+                }
+            )
+            return
+
+        try:
+            final_analysis = _validate_analysis_payload(final_analysis)
+        except (ValidationError, TypeError, ValueError) as exc:
+            logger.warning(
+                "invalid_analysis_output",
+                extra={"course_id": str(course_id), "error": str(exc)},
+            )
+            yield sse_event(
+                {
+                    "type": "error",
+                    "content": "AI returned an invalid analysis format. Please try again.",
                     "retryable": True,
                 }
             )
@@ -162,7 +260,7 @@ async def run_analysis(
         select(Material).where(
             Material.course_id == course_id,
             Material.processing_status == PROCESSING_STATUS_COMPLETED,
-        )
+        ).order_by(Material.created_at.asc())
     )
     completed_materials = result.scalars().all()
 
@@ -193,15 +291,19 @@ async def run_analysis(
         )
     _analysis_course_locks.add(course_id)
 
-    materials_text = "\n\n---\n\n".join(
-        f"[File: {m.original_filename}]\n{m.extracted_text or ''}"
-        for m in usable_materials
-    )
+    materials_text, input_was_truncated = _build_materials_text(usable_materials)
     course_name = course.name
     professor_name = course.professor_name or "Unknown Professor"
 
     return StreamingResponse(
-        _stream_analysis(course_id, course_name, professor_name, materials_text, course_id),
+        _stream_analysis(
+            course_id,
+            course_name,
+            professor_name,
+            materials_text,
+            course_id,
+            input_was_truncated=input_was_truncated,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
