@@ -16,9 +16,19 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-32-chars-minimum!!")
 os.environ.setdefault("UPLOAD_DIR", "/tmp/test-uploads")
 
 from app.core.database import Base, get_db
+from app.core.config import settings
 from app.main import app
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest.fixture(autouse=True)
+def isolate_ai_settings(monkeypatch) -> None:
+    """Keep tests deterministic even when a developer configures a real AI key."""
+    monkeypatch.setattr(settings, "USE_MOCK_CLAUDE", True)
+    monkeypatch.setattr(settings, "AI_PROVIDER", "anthropic")
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
 
 
 @pytest.fixture(scope="session")
