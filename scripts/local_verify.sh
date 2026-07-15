@@ -177,6 +177,9 @@ if [ "$i" -ge 60 ]; then
   exit 1
 fi
 
+log "Checking database migrations match application models"
+docker compose exec -T backend alembic check
+
 log "Running API smoke test against Docker backend"
 docker compose exec -T backend python scripts/e2e_smoke.py
 
