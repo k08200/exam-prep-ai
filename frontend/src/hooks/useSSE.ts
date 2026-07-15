@@ -32,9 +32,12 @@ export function useSSE() {
     ) => {
       controllerRef.current?.abort();
       const token = Cookies.get('access_token');
-      controllerRef.current = new AbortController();
+      const controller = new AbortController();
+      controllerRef.current = controller;
       setIsStreaming(true);
       setTokensUsed(0);
+      let streamCompleted = false;
+      let streamErrored = false;
 
       try {
         const response = await fetch(url, {
@@ -44,7 +47,7 @@ export function useSSE() {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: options.body ? JSON.stringify(options.body) : undefined,
-          signal: controllerRef.current.signal,
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -80,8 +83,12 @@ export function useSSE() {
                   setTokensUsed(data.total_tokens);
                 }
                 options.onEvent(data);
-                if (data.type === 'complete') options.onComplete?.();
+                if (data.type === 'complete') {
+                  streamCompleted = true;
+                  options.onComplete?.();
+                }
                 if (data.type === 'error') {
+                  streamErrored = true;
                   options.onError?.(data.error || data.content || 'Unknown error');
                 }
               } catch {
@@ -90,12 +97,19 @@ export function useSSE() {
             }
           }
         }
+
+        if (!streamCompleted && !streamErrored && !controller.signal.aborted) {
+          options.onError?.('The AI request ended before it completed. Please try again.');
+        }
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== 'AbortError') {
           options.onError?.(err.message);
         }
       } finally {
-        setIsStreaming(false);
+        if (controllerRef.current === controller) {
+          controllerRef.current = null;
+          setIsStreaming(false);
+        }
       }
     },
     []
