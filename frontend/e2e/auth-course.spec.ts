@@ -186,4 +186,29 @@ test.describe('core browser flow', () => {
     await expect(page.getByRole('heading', { name: /concept weakness heatmap/i })).toBeVisible();
     await expect(page.getByText(/no heatmap data yet/i)).not.toBeVisible();
   });
+
+  test('shows a retryable error when an analysis stream ends early', async ({ page }) => {
+    await registerAndCreateCourse(page, `Browser Interrupted Analysis ${Date.now()}`);
+
+    await page.getByRole('button', { name: /upload files/i }).click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'interrupted-analysis.pdf',
+      mimeType: 'application/pdf',
+      buffer: studyMaterial,
+    });
+    await page.getByRole('button', { name: /upload 1 file/i }).click();
+    await expect(page.getByText('Ready')).toBeVisible({ timeout: 20_000 });
+
+    await page.route('**/courses/*/analysis', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: '',
+      })
+    );
+
+    await page.getByRole('button', { name: /ai analysis/i }).click();
+    await page.getByRole('button', { name: /start ai analysis/i }).click();
+    await expect(page.getByText(/ended before it completed/i)).toBeVisible();
+  });
 });
