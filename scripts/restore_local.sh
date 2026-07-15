@@ -52,9 +52,13 @@ if [ ! -f "$snapshot_dir/database.sql" ] || [ ! -d "$snapshot_dir/uploads" ]; th
 fi
 
 printf '%s\n' "Restoring PostgreSQL database..."
+# Keep application connections from recreating or locking the database during restore.
+docker compose stop backend frontend >/dev/null 2>&1 || true
 docker compose up -d db
 wait_for_database
-docker compose exec -T db sh -c 'dropdb --if-exists -U "$POSTGRES_USER" "$POSTGRES_DB"; createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+# --force is safe here because this script already requires an explicit --force
+# confirmation before replacing the local database.
+docker compose exec -T db sh -c 'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB"; createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
 docker compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" "$POSTGRES_DB"' \
   < "$snapshot_dir/database.sql"
 
