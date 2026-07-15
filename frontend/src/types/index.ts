@@ -10,8 +10,10 @@ export interface RuntimeHealth {
   status: string;
   version: string;
   ai: 'ok' | 'not_configured' | string;
-  ai_mode: 'mock' | 'claude' | string;
+  ai_mode: 'mock' | 'claude' | 'openrouter' | string;
+  ai_provider: 'mock' | 'anthropic' | 'openrouter' | string;
   claude_configured: boolean;
+  openrouter_configured: boolean;
 }
 
 export interface AIUsage {

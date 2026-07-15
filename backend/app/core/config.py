@@ -15,8 +15,18 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # AI provider. Keep mock mode enabled for local demos without paid credentials.
+    AI_PROVIDER: str = "anthropic"
+
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
+
+    # OpenRouter (OpenAI-compatible Chat Completions API)
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "anthropic/claude-opus-4.8"
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_SITE_URL: str = ""
+    OPENROUTER_APP_NAME: str = "Exam Prep AI"
 
     # File uploads
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
@@ -78,6 +88,24 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() in {"prod", "production"}
 
+    @property
+    def active_ai_provider(self) -> str:
+        """Return the provider that will handle AI work at runtime."""
+        if self.USE_MOCK_CLAUDE:
+            return "mock"
+        return self.AI_PROVIDER.strip().lower()
+
+    @property
+    def ai_configured(self) -> bool:
+        """Whether the selected AI mode has the credentials it needs."""
+        if self.USE_MOCK_CLAUDE:
+            return True
+        if self.active_ai_provider == "anthropic":
+            return bool(self.ANTHROPIC_API_KEY)
+        if self.active_ai_provider == "openrouter":
+            return bool(self.OPENROUTER_API_KEY)
+        return False
+
     def validate_runtime_settings(self) -> None:
         """Fail fast on unsafe production configuration."""
         if not self.is_production:
@@ -88,8 +116,17 @@ class Settings(BaseSettings):
             raise RuntimeError("Production SECRET_KEY must be at least 32 random characters.")
         if self.USE_MOCK_CLAUDE:
             raise RuntimeError("Production must set USE_MOCK_CLAUDE=false.")
-        if not self.ANTHROPIC_API_KEY:
-            raise RuntimeError("Production Claude mode requires ANTHROPIC_API_KEY.")
+        if self.active_ai_provider not in {"anthropic", "openrouter"}:
+            raise RuntimeError("AI_PROVIDER must be either 'anthropic' or 'openrouter'.")
+        if not self.ai_configured:
+            required_key = (
+                "ANTHROPIC_API_KEY"
+                if self.active_ai_provider == "anthropic"
+                else "OPENROUTER_API_KEY"
+            )
+            raise RuntimeError(
+                f"Production {self.active_ai_provider} mode requires {required_key}."
+            )
         if self.AUTO_CREATE_TABLES:
             raise RuntimeError("Production must set AUTO_CREATE_TABLES=false and use migrations.")
         if not self.cors_origins:

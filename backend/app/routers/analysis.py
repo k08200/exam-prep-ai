@@ -26,12 +26,12 @@ from app.models.material import (
 )
 from app.models.user import User
 from app.schemas.analysis import AnalysisResponse, ConceptItem, ProfessorTerm, QuestionTypeDistribution
-from app.services import get_claude_service
+from app.services import AIServiceProxy
 from app.services.material_quality import is_usable_extracted_text
 from app.services.ai_usage_service import AIUsageService
 
 router = APIRouter(tags=["analysis"])
-claude_service = get_claude_service()
+claude_service = AIServiceProxy()
 logger = logging.getLogger(__name__)
 ai_usage_service = AIUsageService()
 MATERIAL_SEPARATOR = "\n\n---\n\n"

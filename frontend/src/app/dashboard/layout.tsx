@@ -230,31 +230,36 @@ export default function DashboardLayout({
                 <span className="font-semibold">Demo AI mode.</span>{' '}
                 Results use deterministic local responses. Set{' '}
                 <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">USE_MOCK_CLAUDE=false</code>{' '}
-                with an Anthropic API key to use Claude.
+                with either Anthropic or OpenRouter credentials to use real AI.
               </p>
             </div>
           )}
-          {runtimeHealth?.ai_mode === 'claude' && runtimeHealth.claude_configured && (
+          {runtimeHealth?.ai_mode !== 'mock' && runtimeHealth?.ai === 'ok' && (
             <div
               role="status"
               className="flex items-start gap-2 border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 sm:px-6"
             >
               <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-600" />
               <p>
-                <span className="font-semibold">Claude AI connected.</span>{' '}
+                <span className="font-semibold">
+                  {runtimeHealth?.ai_provider === 'openrouter' ? 'OpenRouter AI connected.' : 'Claude AI connected.'}
+                </span>{' '}
                 New analyses, exams, and grading use the configured model.
               </p>
             </div>
           )}
-          {runtimeHealth?.ai_mode === 'claude' && !runtimeHealth.claude_configured && (
+          {runtimeHealth?.ai_mode !== 'mock' && runtimeHealth?.ai === 'not_configured' && (
             <div
               role="status"
               className="flex items-start gap-2 border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 sm:px-6"
             >
               <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
               <p>
-                <span className="font-semibold">Claude AI is not configured.</span>{' '}
-                Set <code className="rounded bg-red-100 px-1 py-0.5 text-xs">ANTHROPIC_API_KEY</code>{' '}
+                <span className="font-semibold">Real AI is not configured.</span>{' '}
+                Set{' '}
+                <code className="rounded bg-red-100 px-1 py-0.5 text-xs">
+                  {runtimeHealth?.ai_provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'ANTHROPIC_API_KEY'}
+                </code>{' '}
                 or switch back to mock mode before starting AI tasks.
               </p>
             </div>

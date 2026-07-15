@@ -1,7 +1,8 @@
-"""Smoke test real Claude API connectivity and model configuration.
+"""Smoke test the configured real AI provider and model configuration.
 
 Usage:
-    USE_MOCK_CLAUDE=false ANTHROPIC_API_KEY=... python scripts/claude_smoke.py
+    USE_MOCK_CLAUDE=false AI_PROVIDER=anthropic ANTHROPIC_API_KEY=... python scripts/claude_smoke.py
+    USE_MOCK_CLAUDE=false AI_PROVIDER=openrouter OPENROUTER_API_KEY=... python scripts/claude_smoke.py
 
 Set CLAUDE_SMOKE_STREAM=true to also verify streaming analysis events with a
 small thinking budget.
@@ -18,8 +19,12 @@ from app.services import get_claude_service
 
 
 async def main() -> None:
-    if not settings.ANTHROPIC_API_KEY:
-        raise SystemExit("ANTHROPIC_API_KEY is required for the Claude smoke test.")
+    if settings.active_ai_provider == "anthropic" and not settings.ANTHROPIC_API_KEY:
+        raise SystemExit("ANTHROPIC_API_KEY is required when AI_PROVIDER=anthropic.")
+    if settings.active_ai_provider == "openrouter" and not settings.OPENROUTER_API_KEY:
+        raise SystemExit("OPENROUTER_API_KEY is required when AI_PROVIDER=openrouter.")
+    if settings.active_ai_provider not in {"anthropic", "openrouter"}:
+        raise SystemExit("AI_PROVIDER must be either 'anthropic' or 'openrouter'.")
 
     settings.USE_MOCK_CLAUDE = False
     service = get_claude_service()
@@ -61,16 +66,21 @@ async def main() -> None:
                 validated_analysis = _validate_analysis_payload(event.get("analysis"))
                 break
         if not completed:
-            raise RuntimeError("Claude streaming smoke test did not complete.")
+            raise RuntimeError("AI provider streaming smoke test did not complete.")
         if validated_analysis is None:
-            raise RuntimeError("Claude streaming smoke test returned no analysis payload.")
+            raise RuntimeError("AI provider streaming smoke test returned no analysis payload.")
         stream_checked = True
 
     print(
         json.dumps(
             {
                 "status": "ok",
-                "model": settings.CLAUDE_MODEL,
+                "provider": settings.active_ai_provider,
+                "model": (
+                    settings.OPENROUTER_MODEL
+                    if settings.active_ai_provider == "openrouter"
+                    else settings.CLAUDE_MODEL
+                ),
                 "grade_score": validated_grade.score,
                 "grade_tokens_used": validated_grade.tokens_used,
                 "stream_checked": stream_checked,

@@ -585,7 +585,9 @@ async def test_health_endpoint(client) -> None:
     assert data["status"] == "ok"
     assert data["ai"] == "ok"
     assert data["ai_mode"] == "mock"
+    assert data["ai_provider"] == "mock"
     assert data["claude_configured"] is False
+    assert data["openrouter_configured"] is False
 
 
 @pytest.mark.asyncio
@@ -626,12 +628,32 @@ async def test_health_endpoint_reports_real_claude_mode(monkeypatch) -> None:
     from app.main import health_check
 
     monkeypatch.setattr(settings, "USE_MOCK_CLAUDE", False)
+    monkeypatch.setattr(settings, "AI_PROVIDER", "anthropic")
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
 
     data = await health_check()
 
     assert data["ai_mode"] == "claude"
+    assert data["ai_provider"] == "anthropic"
     assert data["claude_configured"] is True
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint_reports_openrouter_mode(monkeypatch) -> None:
+    """health_check reports OpenRouter separately from a direct Anthropic key."""
+    from app.core.config import settings
+    from app.main import health_check
+
+    monkeypatch.setattr(settings, "USE_MOCK_CLAUDE", False)
+    monkeypatch.setattr(settings, "AI_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "test-key")
+
+    data = await health_check()
+
+    assert data["ai"] == "ok"
+    assert data["ai_mode"] == "openrouter"
+    assert data["ai_provider"] == "openrouter"
+    assert data["openrouter_configured"] is True
     assert data["ai"] == "ok"
 
 

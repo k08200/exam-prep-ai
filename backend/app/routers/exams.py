@@ -43,11 +43,11 @@ from app.schemas.exam import (
     QuestionResult,
 )
 from app.services.analytics_service import AnalyticsService
-from app.services import get_claude_service
+from app.services import AIServiceProxy
 from app.services.ai_usage_service import AIUsageService
 
 router = APIRouter(tags=["exams"])
-claude_service = get_claude_service()
+claude_service = AIServiceProxy()
 analytics_service = AnalyticsService()
 _exam_generation_course_locks: set[uuid.UUID] = set()
 logger = logging.getLogger(__name__)

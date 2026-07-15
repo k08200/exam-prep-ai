@@ -15,7 +15,7 @@ Hyper-personalized AI exam prep. Upload your lecture materials → AI learns you
 
 ### Prerequisites
 - Docker & Docker Compose
-- Anthropic API key only if you want real Claude output. Local development defaults to deterministic mock AI responses.
+- An Anthropic or OpenRouter API key only if you want real AI output. Local development defaults to deterministic mock AI responses.
 - Python 3.10+ and Node.js 20+ if you run backend/frontend directly without Docker.
 
 ### Setup
@@ -23,7 +23,10 @@ Hyper-personalized AI exam prep. Upload your lecture materials → AI learns you
 git clone <repo>
 cd exam-prep-ai
 cp .env.example .env
-# Optional: edit .env and set USE_MOCK_CLAUDE=false plus ANTHROPIC_API_KEY=your-key-here
+# Optional: choose one real AI provider in .env. The OpenRouter example is below.
+# USE_MOCK_CLAUDE=false
+# AI_PROVIDER=openrouter
+# OPENROUTER_API_KEY=your-key-here
 ```
 
 ### Run
@@ -139,7 +142,7 @@ exam-prep-ai/
 4. **Study**: Take exams, get AI-graded feedback from professor's perspective
 5. **Track**: See your weakness heatmap and improve weak concepts
 
-## Claude API Integration
+## AI Provider Integration
 
 Uses Claude Opus 4.8 with adaptive thinking by default:
 - **Pattern Analysis**: 30,000 token thinking budget for deep professor style extraction
@@ -148,6 +151,31 @@ Uses Claude Opus 4.8 with adaptive thinking by default:
 - Grading uses standard Messages API responses; analysis and exam generation stream in real-time via SSE
 
 Legacy Claude model snapshots use explicit `budget_tokens`; current model families use `thinking: {type: "adaptive"}` with `output_config: {"effort": "high"}`. Set `CLAUDE_THINKING_EFFORT` to tune the current-model depth.
+
+### OpenRouter
+
+OpenRouter is supported as a first-class alternative to a direct Anthropic key. Copy `.env.example` to `.env`, then set:
+
+```bash
+USE_MOCK_CLAUDE=false
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=your-openrouter-key
+OPENROUTER_MODEL=anthropic/claude-opus-4.8
+```
+
+`OPENROUTER_MODEL` accepts any OpenRouter model slug. `anthropic/claude-opus-4.8` is the default because it preserves the project’s Claude-oriented prompts. Keep `.env` private: it is ignored by Git and must never be committed. Restart the backend after changing credentials:
+
+```bash
+docker compose up -d --build backend
+curl http://localhost:8001/ready
+```
+
+The readiness response shows `"ai_provider":"openrouter"` and `"ai":"ok"` when the key is available to the container. Run the provider smoke test before using study data:
+
+```bash
+cd backend
+USE_MOCK_CLAUDE=false AI_PROVIDER=openrouter OPENROUTER_API_KEY=your-key python scripts/claude_smoke.py
+```
 
 ## API Endpoints
 
@@ -220,10 +248,10 @@ cd backend
 E2E_API_URL=http://127.0.0.1:8001 python scripts/e2e_smoke.py
 ```
 
-To verify real Claude credentials and model configuration:
+To verify real Anthropic or OpenRouter credentials and model configuration:
 ```bash
 cd backend
-USE_MOCK_CLAUDE=false ANTHROPIC_API_KEY=your-key python scripts/claude_smoke.py
+USE_MOCK_CLAUDE=false AI_PROVIDER=anthropic ANTHROPIC_API_KEY=your-key python scripts/claude_smoke.py
 ```
 
 To run the browser smoke flow, start the backend and frontend first, then run:
@@ -255,7 +283,12 @@ npm run dev
 | Variable | Description | Required |
 |----------|-------------|----------|
 | ENVIRONMENT | Runtime mode (`development` or `production`) | No (default: development) |
-| ANTHROPIC_API_KEY | Your Anthropic API key | Only when `USE_MOCK_CLAUDE=false` |
+| AI_PROVIDER | Real AI provider: `anthropic` or `openrouter` | Only when `USE_MOCK_CLAUDE=false` (default: `anthropic`) |
+| ANTHROPIC_API_KEY | Your Anthropic API key | When `AI_PROVIDER=anthropic` and mock mode is off |
+| OPENROUTER_API_KEY | Your OpenRouter API key | When `AI_PROVIDER=openrouter` and mock mode is off |
+| OPENROUTER_MODEL | OpenRouter model slug | No (default: `anthropic/claude-opus-4.8`) |
+| OPENROUTER_SITE_URL | Optional public app URL sent to OpenRouter | No |
+| OPENROUTER_APP_NAME | Optional app title sent to OpenRouter | No (default: `Exam Prep AI`) |
 | DATABASE_URL | PostgreSQL connection string | Yes |
 | SECRET_KEY | JWT secret (32+ chars) | Yes |
 | USE_MOCK_CLAUDE | Use deterministic mock AI responses | No (default in Docker: true) |

@@ -64,13 +64,15 @@ app.include_router(exams.router)
 @app.get("/health", tags=["meta"])
 async def health_check() -> dict:
     """Simple liveness probe."""
-    ai_ready = settings.USE_MOCK_CLAUDE or bool(settings.ANTHROPIC_API_KEY)
+    ai_ready = settings.ai_configured
     return {
         "status": "ok",
         "version": "1.0.0",
         "ai": "ok" if ai_ready else "not_configured",
-        "ai_mode": "mock" if settings.USE_MOCK_CLAUDE else "claude",
+        "ai_mode": "claude" if settings.active_ai_provider == "anthropic" else settings.active_ai_provider,
+        "ai_provider": settings.active_ai_provider,
         "claude_configured": bool(settings.ANTHROPIC_API_KEY),
+        "openrouter_configured": bool(settings.OPENROUTER_API_KEY),
     }
 
 
@@ -80,15 +82,17 @@ async def readiness_check(db: AsyncSession = Depends(get_db)) -> dict:
     await db.execute(text("SELECT 1"))
     upload_path = Path(settings.UPLOAD_DIR)
     upload_ready = upload_path.exists() and upload_path.is_dir() and os.access(upload_path, os.W_OK)
-    ai_ready = settings.USE_MOCK_CLAUDE or bool(settings.ANTHROPIC_API_KEY)
+    ai_ready = settings.ai_configured
 
     return {
         "status": "ready" if upload_ready and ai_ready else "not_ready",
         "database": "ok",
         "upload_dir": "ok" if upload_ready else "not_writable",
         "ai": "ok" if ai_ready else "not_configured",
-        "ai_mode": "mock" if settings.USE_MOCK_CLAUDE else "claude",
+        "ai_mode": "claude" if settings.active_ai_provider == "anthropic" else settings.active_ai_provider,
+        "ai_provider": settings.active_ai_provider,
         "claude_configured": bool(settings.ANTHROPIC_API_KEY),
+        "openrouter_configured": bool(settings.OPENROUTER_API_KEY),
     }
 
 
