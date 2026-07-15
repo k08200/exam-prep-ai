@@ -211,4 +211,41 @@ test.describe('core browser flow', () => {
     await page.getByRole('button', { name: /start ai analysis/i }).click();
     await expect(page.getByText(/ended before it completed/i)).toBeVisible();
   });
+
+  test('shows a retryable error when an exam generation stream ends early', async ({ page }) => {
+    await registerAndCreateCourse(page, `Browser Interrupted Exam ${Date.now()}`);
+
+    await page.getByRole('button', { name: /upload files/i }).click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'interrupted-exam.pdf',
+      mimeType: 'application/pdf',
+      buffer: studyMaterial,
+    });
+    await page.getByRole('button', { name: /upload 1 file/i }).click();
+    await expect(page.getByText('Ready')).toBeVisible({ timeout: 20_000 });
+
+    await page.getByRole('button', { name: /ai analysis/i }).click();
+    await page.getByRole('button', { name: /start ai analysis/i }).click();
+    await expect(page.getByRole('heading', { name: /professor pattern analysis/i })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    await page.route('**/courses/*/exams', (route) => {
+      if (route.request().method() === 'POST') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: '',
+        });
+      }
+      return route.continue();
+    });
+
+    await page.getByRole('button', { name: /^exams$/i }).click();
+    await page.getByRole('button', { name: /generate exam/i }).click();
+    const generateDialog = page.getByRole('dialog', { name: /generate practice exam/i });
+    await generateDialog.getByPlaceholder('e.g. Midterm Practice').fill('Interrupted Practice');
+    await generateDialog.getByRole('button', { name: /^generate exam$/i }).click();
+    await expect(generateDialog.getByText(/ended before it completed/i)).toBeVisible();
+  });
 });
