@@ -6,6 +6,7 @@ cd "$ROOT_DIR"
 
 BACKEND_PORT="${BACKEND_PORT:-8001}"
 FRONTEND_PORT="${FRONTEND_PORT:-3003}"
+MIN_HOST_FREE_GB="${MIN_HOST_FREE_GB:-40}"
 if [ -z "${NEXT_PUBLIC_API_URL:-}" ]; then
   NEXT_PUBLIC_API_URL="http://localhost:${BACKEND_PORT}"
   export NEXT_PUBLIC_API_URL
@@ -91,6 +92,29 @@ EOF
   fi
 }
 
+check_host_disk_space() {
+  available_kb="$(df -Pk "$ROOT_DIR" | awk 'NR == 2 { print $4 }')"
+  required_kb=$((MIN_HOST_FREE_GB * 1024 * 1024))
+
+  if [ -z "$available_kb" ] || [ "$available_kb" -ge "$required_kb" ]; then
+    return
+  fi
+
+  available_gb=$((available_kb / 1024 / 1024))
+  cat >&2 <<EOF
+Only about ${available_gb} GB of host disk space is available.
+
+Docker Desktop needs free host space while it builds images and grows its virtual disk.
+Free at least ${MIN_HOST_FREE_GB} GB, then run ./scripts/local_verify.sh again.
+
+To inspect Docker usage without deleting anything:
+  docker system df
+
+Do not reset Docker Desktop or remove volumes unless you intentionally want to delete local study data.
+EOF
+  exit 1
+}
+
 log "Checking Docker daemon"
 if ! run_with_timeout 30 docker version >/dev/null 2>&1; then
   cat >&2 <<'EOF'
@@ -105,6 +129,9 @@ This script does not remove project volumes, so your local study data is preserv
 EOF
   exit 1
 fi
+
+log "Checking host disk capacity"
+check_host_disk_space
 
 log "Validating Docker Compose configuration"
 docker compose config --quiet

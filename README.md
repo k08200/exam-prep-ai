@@ -52,6 +52,16 @@ This validates Docker Compose, rebuilds the backend/frontend, runs the backend t
 
 If verification stops at `Docker is not responding`, open or restart Docker Desktop, wait until it reports that it is running, confirm `docker version` returns normally, then run the script again.
 
+The verifier also checks host free disk space before building. Docker Desktop grows a local virtual disk while it builds images, so keep at least 40 GB free for a reliable full verification. To inspect Docker usage without deleting anything, run:
+```bash
+docker system df
+```
+Set `MIN_HOST_FREE_GB` only when you understand your machine's available capacity:
+```bash
+MIN_HOST_FREE_GB=25 ./scripts/local_verify.sh
+```
+Do not use Docker Desktop's reset options or remove Docker volumes unless you intentionally want to delete all local study data.
+
 If another app already uses the default local ports, run verification on alternate ports:
 ```bash
 BACKEND_PORT=8011 FRONTEND_PORT=3013 ./scripts/local_verify.sh
