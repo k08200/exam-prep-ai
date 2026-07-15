@@ -67,6 +67,14 @@ MIN_HOST_FREE_GB=25 ./scripts/local_verify.sh
 ```
 Do not use Docker Desktop's reset options or remove Docker volumes unless you intentionally want to delete all local study data.
 
+When the app images were already built from the current code and you only need to verify the running local stack, reuse them without a rebuild:
+
+```bash
+REUSE_EXISTING_IMAGES=true RUN_BROWSER_E2E=true ./scripts/local_verify.sh
+```
+
+This still runs backend tests, the API smoke flow, and browser E2E. It intentionally does not prove that unbuilt source changes are inside the images, so use the default command after code or dependency changes.
+
 If another app already uses the default local ports, run verification on alternate ports:
 ```bash
 BACKEND_PORT=8011 FRONTEND_PORT=3013 ./scripts/local_verify.sh

@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 BACKEND_PORT="${BACKEND_PORT:-8001}"
 FRONTEND_PORT="${FRONTEND_PORT:-3003}"
 MIN_HOST_FREE_GB="${MIN_HOST_FREE_GB:-40}"
+REUSE_EXISTING_IMAGES="${REUSE_EXISTING_IMAGES:-false}"
 if [ -z "${NEXT_PUBLIC_API_URL:-}" ]; then
   NEXT_PUBLIC_API_URL="http://localhost:${BACKEND_PORT}"
   export NEXT_PUBLIC_API_URL
@@ -130,8 +131,15 @@ EOF
   exit 1
 fi
 
-log "Checking host disk capacity"
-check_host_disk_space
+if [ "$REUSE_EXISTING_IMAGES" != "true" ] && [ "$REUSE_EXISTING_IMAGES" != "false" ]; then
+  printf '%s\n' "REUSE_EXISTING_IMAGES must be either true or false." >&2
+  exit 2
+fi
+
+if [ "$REUSE_EXISTING_IMAGES" = "false" ]; then
+  log "Checking host disk capacity"
+  check_host_disk_space
+fi
 
 log "Validating Docker Compose configuration"
 docker compose config --quiet
@@ -140,8 +148,12 @@ log "Checking local ports"
 check_port_available "$BACKEND_PORT" exam-prep-ai-backend-1 "the backend API"
 check_port_available "$FRONTEND_PORT" exam-prep-ai-frontend-1 "the frontend"
 
-log "Building backend and frontend images"
-docker compose build --progress=plain backend frontend
+if [ "$REUSE_EXISTING_IMAGES" = "true" ]; then
+  log "Reusing existing Docker images without rebuilding"
+else
+  log "Building backend and frontend images"
+  docker compose build --progress=plain backend frontend
+fi
 
 log "Running backend test suite inside Docker"
 docker compose run --rm --no-deps backend python -m pytest tests/ -q --tb=short
