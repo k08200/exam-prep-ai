@@ -178,6 +178,18 @@ async def test_real_generation_parses_one_streamed_question(monkeypatch) -> None
     assert messages.stream_calls[0]["thinking"] == {"type": "adaptive"}
 
 
+def test_json_extractors_handle_braces_inside_string_values() -> None:
+    """Question text may legitimately contain code or notation with braces."""
+    from app.services.claude_service import _extract_all_json_objects, _extract_json
+
+    first = {"question_text": "What does f({x}) return?", "answer": "A"}
+    second = {"question_text": "Use the set {a, b}.", "answer": "B"}
+    response = f"Here are two questions:\n{json.dumps(first)}\n{json.dumps(second)}"
+
+    assert _extract_json(f"Preface: {json.dumps(first)}") == first
+    assert _extract_all_json_objects(response) == [first, second]
+
+
 @pytest.mark.asyncio
 async def test_real_grading_uses_messages_create_and_returns_usage(monkeypatch) -> None:
     """The non-streaming grading path parses feedback and accounts for tokens."""
@@ -227,3 +239,31 @@ async def test_real_grading_uses_messages_create_and_returns_usage(monkeypatch) 
         "tokens_used": 24,
     }
     assert messages.create_calls[0]["model"] == "claude-opus-4-8"
+
+
+@pytest.mark.asyncio
+async def test_real_grading_rejects_unstructured_provider_output(monkeypatch) -> None:
+    """Malformed output must fail instead of being saved as a zero-score answer."""
+    from pydantic import ValidationError
+
+    from app.core.config import settings
+    from app.services import claude_service as service_module
+    from app.services.claude_service import ClaudeService
+
+    response = SimpleNamespace(
+        content=[SimpleNamespace(text="I cannot provide a grade right now.")],
+        usage=SimpleNamespace(input_tokens=11, output_tokens=13),
+    )
+    messages = _FakeMessages(_FakeStream([], _final_message()), response=response)
+    fake_client = _FakeClient(messages)
+
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(service_module.anthropic, "AsyncAnthropic", lambda api_key: fake_client)
+
+    service = ClaudeService()
+    with pytest.raises(ValidationError):
+        await service.grade_response(
+            question={"question_text": "What is ATP?"},
+            student_answer="Energy molecule",
+            professor_context="",
+        )

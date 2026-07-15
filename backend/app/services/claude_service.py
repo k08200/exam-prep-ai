@@ -13,6 +13,7 @@ from typing import AsyncGenerator
 import anthropic
 
 from app.core.config import settings
+from app.schemas.exam import GradeResponse
 
 # Use AsyncAnthropic for non-blocking streaming in async FastAPI context
 
@@ -342,11 +343,14 @@ class ClaudeService:
 
         tokens_used = response.usage.input_tokens + response.usage.output_tokens
 
-        grade_data = _extract_json(response_text)
+        # Do not turn an unparseable provider response into a persisted zero.
+        # GradeResponse also normalizes JSON booleans represented as strings,
+        # avoiding Python's unsafe bool("false") == True behavior.
+        grade = GradeResponse.model_validate(_extract_json(response_text))
         return {
-            "is_correct": bool(grade_data.get("is_correct", False)),
-            "score": float(grade_data.get("score", 0.0)),
-            "feedback": str(grade_data.get("feedback", "No feedback available.")),
+            "is_correct": grade.is_correct,
+            "score": grade.score,
+            "feedback": grade.feedback,
             "tokens_used": tokens_used,
         }
 
@@ -372,13 +376,10 @@ def _extract_json(text: str) -> dict:
         except json.JSONDecodeError:
             pass
 
-    # Largest {...} block
-    brace_match = re.search(r"\{.*\}", text, re.DOTALL)
-    if brace_match:
-        try:
-            return json.loads(brace_match.group(0))
-        except json.JSONDecodeError:
-            pass
+    # Scan for the first complete JSON object. JSONDecoder understands quoted
+    # braces and escaped characters, unlike a regular-expression brace match.
+    for obj in _extract_all_json_objects(text):
+        return obj
 
     logger.warning("Could not extract JSON from Claude response. Returning empty dict.")
     return {}
@@ -390,24 +391,21 @@ def _extract_all_json_objects(text: str) -> list[dict]:
     multiple consecutive or separated JSON objects.
     """
     objects: list[dict] = []
-    depth = 0
-    start = None
+    decoder = json.JSONDecoder()
+    index = 0
 
-    for i, ch in enumerate(text):
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0 and start is not None:
-                fragment = text[start : i + 1]
-                try:
-                    obj = json.loads(fragment)
-                    if isinstance(obj, dict):
-                        objects.append(obj)
-                except json.JSONDecodeError:
-                    pass
-                start = None
+    while index < len(text):
+        start = text.find("{", index)
+        if start < 0:
+            break
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            index = start + 1
+            continue
+
+        if isinstance(value, dict):
+            objects.append(value)
+        index = end
 
     return objects
