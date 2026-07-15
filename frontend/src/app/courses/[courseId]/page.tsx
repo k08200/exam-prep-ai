@@ -254,7 +254,8 @@ export default function CourseDetailPage() {
     setIsGenerating(true);
 
     const token = Cookies.get('access_token');
-    generateControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    generateControllerRef.current = controller;
 
     try {
       const response = await fetch(examsApi.getStreamUrl(courseId), {
@@ -264,7 +265,7 @@ export default function CourseDetailPage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(generateOptions),
-        signal: generateControllerRef.current.signal,
+        signal: controller.signal,
       });
 
       if (!response.ok) {
@@ -284,6 +285,7 @@ export default function CourseDetailPage() {
 
       let buffer = '';
       let createdExamId: string | null = null;
+      let generationCompleted = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -314,6 +316,7 @@ export default function CourseDetailPage() {
                 createdExamId = data.exam_id;
               }
               if (data.type === 'complete') {
+                generationCompleted = true;
                 setIsGenerateOpen(false);
                 refetchExams();
                 setActiveTab('exams');
@@ -334,6 +337,10 @@ export default function CourseDetailPage() {
           throw new Error(streamFailure);
         }
       }
+
+      if (!generationCompleted && !controller.signal.aborted) {
+        throw new Error('The AI request ended before it completed. Please try again.');
+      }
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
         setGenerateError('Exam generation cancelled.');
@@ -343,8 +350,10 @@ export default function CourseDetailPage() {
         );
       }
     } finally {
-      generateControllerRef.current = null;
-      setIsGenerating(false);
+      if (generateControllerRef.current === controller) {
+        generateControllerRef.current = null;
+        setIsGenerating(false);
+      }
     }
   };
 
