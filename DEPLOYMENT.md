@@ -12,7 +12,7 @@
 - Keep `ANALYSIS_RUN_STALE_MINUTES` longer than the slowest expected analysis stream so an active run is not reclaimed while still running.
 - Mount persistent storage for `UPLOAD_DIR`.
 - Set `MAX_USER_STORAGE_BYTES` to a per-user limit appropriate for the disk available to your users.
-- Set `MAX_DAILY_AI_ANALYSES`, `MAX_DAILY_AI_GENERATED_QUESTIONS`, and `MAX_DAILY_AI_GRADES` to a budget that matches the configured Claude model and account plan. Limits reset at midnight UTC and are reserved before provider work starts.
+- Set `MAX_DAILY_AI_ANALYSES`, `MAX_DAILY_AI_GENERATED_QUESTIONS`, and `MAX_DAILY_AI_GRADES` to a budget that matches the configured AI provider, model, and account plan. Limits reset at midnight UTC and are reserved before provider work starts.
 - Tune `REQUEST_TIMEOUT_SECONDS`, `AI_STREAM_HEARTBEAT_SECONDS`, and `AI_STREAM_EVENT_TIMEOUT_SECONDS` for your platform timeout limits.
 
 ## AI Mode
@@ -22,9 +22,10 @@ Development can run with deterministic mock output:
 ```bash
 USE_MOCK_CLAUDE=true
 ANTHROPIC_API_KEY=
+OPENROUTER_API_KEY=
 ```
 
-Production Claude mode must be explicit:
+Production Anthropic mode must be explicit:
 
 ```bash
 USE_MOCK_CLAUDE=false
@@ -36,7 +37,19 @@ MAX_DAILY_AI_GENERATED_QUESTIONS=200
 MAX_DAILY_AI_GRADES=300
 ```
 
-The backend now fails fast if `USE_MOCK_CLAUDE=false` and `ANTHROPIC_API_KEY` is empty. Confirm the active mode with:
+Production OpenRouter mode must also be explicit:
+
+```bash
+USE_MOCK_CLAUDE=false
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=your_openrouter_key
+OPENROUTER_MODEL=anthropic/claude-opus-4.8
+MAX_DAILY_AI_ANALYSES=10
+MAX_DAILY_AI_GENERATED_QUESTIONS=200
+MAX_DAILY_AI_GRADES=300
+```
+
+Store credentials in a secret manager or the ignored local `.env` file, never in `.env.example` or source control. The backend fails fast in production if the selected provider has no key. Confirm the active mode with:
 
 ```bash
 curl https://your-api.example.com/health
@@ -49,9 +62,12 @@ Expected production fields:
   "status": "ok",
   "ai": "ok",
   "ai_mode": "claude",
+  "ai_provider": "anthropic",
   "claude_configured": true
 }
 ```
+
+For OpenRouter, expect `"ai_mode":"openrouter"`, `"ai_provider":"openrouter"`, and `"openrouter_configured":true`.
 
 ## Migrations
 
@@ -80,11 +96,18 @@ E2E_API_URL=https://your-api.example.com python scripts/e2e_smoke.py
 
 This checks auth, course creation, material parsing, failed material retry, analysis streaming, exam generation, submission, and persisted result retrieval.
 
-Verify real Claude credentials and model configuration before disabling mock mode:
+Verify real provider credentials and model configuration before disabling mock mode:
 
 ```bash
 cd backend
 USE_MOCK_CLAUDE=false ANTHROPIC_API_KEY=your_anthropic_key python scripts/claude_smoke.py
+```
+
+For OpenRouter:
+
+```bash
+cd backend
+USE_MOCK_CLAUDE=false AI_PROVIDER=openrouter OPENROUTER_API_KEY=your_openrouter_key python scripts/claude_smoke.py
 ```
 
 For browser-level validation, run the frontend against the deployed API and execute:
@@ -119,6 +142,6 @@ Before routing traffic:
 - `alembic upgrade head` has completed.
 - The `0005_analysis_runs` migration is applied so daily AI limits, shared analysis locking, concurrent draft-generation protection, and password session invalidation work correctly.
 - Frontend build points to the production API URL.
-- `USE_MOCK_CLAUDE` is false only when `ANTHROPIC_API_KEY` is configured.
+- `USE_MOCK_CLAUDE` is false only when the key for `AI_PROVIDER` is configured.
 - Upload storage is persistent across restarts.
 - `MAX_UPLOAD_FILES` and `MAX_FILE_SIZE` match the frontend limits.

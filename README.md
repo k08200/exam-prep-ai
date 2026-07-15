@@ -22,12 +22,14 @@ Hyper-personalized AI exam prep. Upload your lecture materials → AI learns you
 ```bash
 git clone <repo>
 cd exam-prep-ai
-cp .env.example .env
-# Optional: choose one real AI provider in .env. The OpenRouter example is below.
+./scripts/setup_local.sh
+# Optional: choose one real AI provider in the newly-created .env. The OpenRouter example is below.
 # USE_MOCK_CLAUDE=false
 # AI_PROVIDER=openrouter
 # OPENROUTER_API_KEY=your-key-here
 ```
+
+`./scripts/setup_local.sh` refuses to overwrite an existing `.env`. That file is ignored by Git and is the only local file that should contain credentials. Keep `.env.example` credential-free so it remains safe to commit and share.
 
 ### Run
 ```bash
@@ -154,7 +156,7 @@ Legacy Claude model snapshots use explicit `budget_tokens`; current model famili
 
 ### OpenRouter
 
-OpenRouter is supported as a first-class alternative to a direct Anthropic key. Copy `.env.example` to `.env`, then set:
+OpenRouter is supported as a first-class alternative to a direct Anthropic key. Run `./scripts/setup_local.sh` once to create the ignored `.env`, then set:
 
 ```bash
 USE_MOCK_CLAUDE=false
@@ -163,7 +165,7 @@ OPENROUTER_API_KEY=your-openrouter-key
 OPENROUTER_MODEL=anthropic/claude-opus-4.8
 ```
 
-`OPENROUTER_MODEL` accepts any OpenRouter model slug. `anthropic/claude-opus-4.8` is the default because it preserves the project’s Claude-oriented prompts. Keep `.env` private: it is ignored by Git and must never be committed. Restart the backend after changing credentials:
+`OPENROUTER_MODEL` accepts any OpenRouter model slug. `anthropic/claude-opus-4.8` is the default because it preserves the project’s Claude-oriented prompts. Keep `.env` private: it is ignored by Git and must never be committed. Never paste a credential into `.env.example`. Restart the backend after changing credentials:
 
 ```bash
 docker compose up -d --build backend
