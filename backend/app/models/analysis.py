@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 try:
@@ -11,6 +11,11 @@ except ImportError:
     from sqlalchemy.types import JSON  # type: ignore
 
 from app.core.database import Base
+
+
+# PostgreSQL is the supported persistent database. Keep JSONB there while
+# retaining SQLite compatibility for the fast unit-test suite.
+JSON_DOCUMENT = JSONB().with_variant(JSON(), "sqlite")
 
 
 class ProfessorAnalysis(Base):
@@ -27,15 +32,15 @@ class ProfessorAnalysis(Base):
         index=True,
     )
     # list of {concept: str, frequency: int, importance_score: float, description: str}
-    top_concepts: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    top_concepts: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
     # {multiple_choice: float, essay: float, calculation: float, true_false: float}
-    question_types: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    question_types: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
     # {topic_name: percentage}
-    topic_distribution: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    topic_distribution: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
     # list of {term: str, context: str, frequency: int}
-    professor_terms: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    professor_terms: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
     # {difficulty_levels: {...}, time_estimates: {...}, ...}
-    exam_patterns: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    exam_patterns: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
     raw_analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     thinking_tokens_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_tokens_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

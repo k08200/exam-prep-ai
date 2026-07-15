@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const baseURL = process.env.E2E_BASE_URL || 'http://127.0.0.1:3000';
+// Match the standard docker-compose frontend port. CI or a custom local server
+// can still override this through E2E_BASE_URL.
+const baseURL = process.env.E2E_BASE_URL || 'http://127.0.0.1:3003';
 
 export default defineConfig({
   testDir: './e2e',

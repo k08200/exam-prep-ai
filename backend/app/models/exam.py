@@ -10,9 +10,10 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 try:
@@ -22,6 +23,11 @@ except ImportError:
 from sqlalchemy import text
 
 from app.core.database import Base
+
+
+# Store structured study data as JSONB in PostgreSQL while preserving the
+# SQLite variant used by the unit tests.
+JSON_DOCUMENT = JSONB().with_variant(JSON(), "sqlite")
 
 EXAM_STATUS_DRAFT = "draft"
 EXAM_STATUS_ACTIVE = "active"
@@ -120,13 +126,16 @@ class ExamQuestion(Base):
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     question_type: Mapped[str] = mapped_column(String(30), nullable=False)
     # For multiple_choice: [{"label": "A", "text": "..."}, ...]
-    choices: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    choices: Mapped[list | None] = mapped_column(JSON_DOCUMENT, nullable=True)
     correct_answer: Mapped[str] = mapped_column(Text, nullable=False)
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     # list of concept names this question tests
-    concepts: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    concepts: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
     difficulty: Mapped[str] = mapped_column(String(10), nullable=False)
     tokens_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     # Relationships
     exam: Mapped["Exam"] = relationship("Exam", back_populates="questions")
@@ -179,6 +188,14 @@ class StudentResponse(Base):
 
 class ConceptTracking(Base):
     __tablename__ = "concept_tracking"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "course_id",
+            "concept",
+            name="uq_concept_tracking_user_course_concept",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
