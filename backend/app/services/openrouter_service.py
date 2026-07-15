@@ -18,6 +18,25 @@ from app.services.claude_service import (
 logger = logging.getLogger(__name__)
 
 
+def _raise_for_openrouter_error(response: httpx.Response) -> None:
+    """Raise provider-safe guidance without exposing upstream response details."""
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        messages = {
+            400: "OpenRouter rejected the request. Check the configured model and request limits.",
+            401: "OpenRouter rejected the API key. Update OPENROUTER_API_KEY and restart the backend.",
+            402: "OpenRouter has insufficient account credits for this request.",
+            403: "OpenRouter denied access to the configured model.",
+            429: "OpenRouter is rate-limiting requests. Wait a moment and try again.",
+        }
+        message = messages.get(
+            exc.response.status_code,
+            "OpenRouter could not complete the AI request. Please try again.",
+        )
+        raise RuntimeError(message) from exc
+
+
 def _content_text(content: object) -> str:
     """Normalize OpenRouter content, which can be text or typed content blocks."""
     if isinstance(content, str):
@@ -86,7 +105,7 @@ class OpenRouterService:
                 headers=self._headers,
                 json=self._payload(system_prompt, user_prompt, stream=True),
             ) as response:
-                response.raise_for_status()
+                _raise_for_openrouter_error(response)
                 async for line in response.aiter_lines():
                     if not line or line.startswith(":") or not line.startswith("data:"):
                         continue
@@ -240,7 +259,7 @@ class OpenRouterService:
                 headers=self._headers,
                 json=self._payload(GRADING_SYSTEM_PROMPT, user_prompt, stream=False),
             )
-            response.raise_for_status()
+            _raise_for_openrouter_error(response)
             payload = response.json()
 
         choices = payload.get("choices") or []

@@ -75,6 +75,22 @@ def _configure_openrouter(monkeypatch, stream_lines: list[str], grade_payload: d
     return calls
 
 
+def test_openrouter_error_messages_are_actionable() -> None:
+    from app.services.openrouter_service import _raise_for_openrouter_error
+    import httpx
+
+    request = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+
+    with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
+        _raise_for_openrouter_error(httpx.Response(401, request=request))
+
+    with pytest.raises(RuntimeError, match="insufficient account credits"):
+        _raise_for_openrouter_error(httpx.Response(402, request=request))
+
+    with pytest.raises(RuntimeError, match="rate-limiting"):
+        _raise_for_openrouter_error(httpx.Response(429, request=request))
+
+
 @pytest.mark.asyncio
 async def test_openrouter_analysis_streams_text_reasoning_and_usage(monkeypatch) -> None:
     from app.services.openrouter_service import OpenRouterService
