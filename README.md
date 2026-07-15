@@ -183,9 +183,10 @@ curl http://localhost:8001/ready
 The readiness response shows `"ai_provider":"openrouter"` and `"ai":"ok"` when the key is available to the container. Run the provider smoke test before using study data:
 
 ```bash
-cd backend
-USE_MOCK_CLAUDE=false AI_PROVIDER=openrouter OPENROUTER_API_KEY=your-key python scripts/claude_smoke.py
+docker compose exec -T backend python scripts/claude_smoke.py
 ```
+
+This command reads the provider settings from the ignored root `.env`; do not place a key in shell history or source files.
 
 ## API Endpoints
 
@@ -260,8 +261,7 @@ E2E_API_URL=http://127.0.0.1:8001 python scripts/e2e_smoke.py
 
 To verify real Anthropic or OpenRouter credentials and model configuration:
 ```bash
-cd backend
-USE_MOCK_CLAUDE=false AI_PROVIDER=anthropic ANTHROPIC_API_KEY=your-key python scripts/claude_smoke.py
+docker compose exec -T backend python scripts/claude_smoke.py
 ```
 
 To run the browser smoke flow, start the backend and frontend first, then run:

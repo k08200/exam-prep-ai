@@ -99,11 +99,12 @@ This checks auth, course creation, material parsing, failed material retry, anal
 Verify real provider credentials and model configuration before disabling mock mode:
 
 ```bash
-cd backend
-USE_MOCK_CLAUDE=false ANTHROPIC_API_KEY=your_anthropic_key python scripts/claude_smoke.py
+docker compose exec -T backend python scripts/claude_smoke.py
 ```
 
-For OpenRouter:
+The command uses the selected provider and key from the ignored root `.env`. Keep credentials out of shell history and source files. For OpenRouter, set `USE_MOCK_CLAUDE=false`, `AI_PROVIDER=openrouter`, and `OPENROUTER_API_KEY` in `.env` before rebuilding the backend.
+
+For a non-Docker deployment, run from the backend directory only after injecting the provider credentials through that deployment's secret manager:
 
 ```bash
 cd backend
